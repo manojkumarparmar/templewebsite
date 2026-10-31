@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Temple Laundry Schedule</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=Figtree:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --fg: #16203a;
+  --muted: #4f5b78;
+  --line: #dde2ec;
+  --accent: #27408b;
+  --on-accent: #ffffff;
+  --today-bg: #eef2ff;
+  --warn-bg: #fff4dc;
+  --warn-fg: #7a4b00;
+  --warn-line: #d9962b;
+  --away-bg: #fdecea;
+  --away-fg: #9c2f22;
+  --cover-bg: #e3f3ea;
+  --cover-fg: #1b6b43;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --font-body: "Figtree", "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1424;
+    --surface: #182038;
+    --fg: #eaeefb;
+    --muted: #a3aecd;
+    --line: #2a3556;
+    --accent: #9db4ff;
+    --on-accent: #0f1424;
+    --today-bg: #1d2a54;
+    --warn-bg: #3a2c0f;
+    --warn-fg: #ffd58c;
+    --warn-line: #e3a94a;
+    --away-bg: #3d1a17;
+    --away-fg: #ffb4a8;
+    --cover-bg: #12301f;
+    --cover-fg: #8fdcae;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.45;
+  padding-block: max(28px, env(safe-area-inset-top, 0px)) max(40px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+h1 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: clamp(30px, 8vw, 44px); line-height: 1.05; text-wrap: balance; }
+h2, h3 { margin: 0; }
+.head { display: flex; flex-direction: column; gap: 4px; }
+
+.tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; max-width: 420px; }
+.tab { min-height: 44px; border: 0; border-radius: 10px; font: inherit; font-weight: 600; background: transparent; color: var(--fg); cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--accent); color: var(--on-accent); }
+.tab:focus-visible, .day:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.range { font-size: 14px; color: var(--muted); }
+.bar { display: flex; flex-direction: column; gap: 8px; }
+
+.today { background: var(--accent); color: var(--on-accent); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 14px; max-width: 560px; }
+.today h2 { font-family: var(--font-display); font-size: 20px; }
+.today-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.today-grid > div { min-width: 0; }
+.label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; }
+.label svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.today .names { font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
+
+.backups { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
+.backups h2 { font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.backup-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.backup { background: var(--today-bg); color: var(--accent); font-weight: 600; border-radius: 10px; padding: 10px 12px; overflow-wrap: anywhere; }
+.backups p { margin: 0; font-size: 14px; color: var(--muted); }
+
+.days { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.day { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.day.is-today { background: var(--today-bg); border: 2px solid var(--accent); padding: 13px; }
+.day-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+.day-name { font-family: var(--font-display); font-weight: 700; font-size: 20px; }
+.day-date { font-size: 14px; color: var(--muted); }
+.pill { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; background: var(--accent); color: var(--on-accent); border-radius: 999px; padding: 2px 9px; align-self: center; }
+.shift { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; min-width: 0; }
+.shift .label { color: var(--muted); font-size: 11px; }
+.who { font-weight: 600; overflow-wrap: anywhere; }
+.who .gone { text-decoration: line-through; color: var(--muted); font-weight: 500; }
+.chip { display: inline-block; font-size: 13px; font-weight: 600; border-radius: 999px; padding: 3px 10px; }
+.chip.away { background: var(--away-bg); color: var(--away-fg); }
+.chip.need { background: var(--warn-bg); color: var(--warn-fg); }
+.chip.cover { background: var(--cover-bg); color: var(--cover-fg); }
+.note { font-size: 13px; color: var(--muted); }
+.foot { font-size: 14px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
+@media (min-width: 760px) { .days { gap: 12px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="head">
+    <div class="eyebrow">Sri Radha Kalachandji Temple</div>
+    <h1>Laundry Service</h1>
+  </header>
+
+  <div class="bar">
+    <div class="tabs" role="tablist" aria-label="Choose a week">
+      <button class="tab" role="tab" id="tab-this" aria-selected="true" type="button">This week</button>
+      <button class="tab" role="tab" id="tab-next" aria-selected="false" type="button">Next week</button>
+    </div>
+    <div class="range" id="range"></div>
+  </div>
+
+  <section class="today" id="today" hidden aria-live="polite"></section>
+
+  <section class="backups" aria-labelledby="backups-h">
+    <h2 id="backups-h">Permanent backups</h2>
+    <div class="backup-list" id="backup-list"></div>
+    <p>Call a backup first when a shift needs cover.</p>
+  </section>
+
+  <ul class="days" id="days" aria-label="Daily schedule"></ul>
+
+  <footer class="foot">
+    <span>This schedule repeats every week.</span>
+  </footer>
+</div>
+
+<script>
+/* ==========================================================================
+   EDIT THIS SECTION TO UPDATE THE SCHEDULE
+   ========================================================================== */
+
+/* Permanent backups. Replace with real names. */
+var BACKUPS = ["Backup One", "Backup Two"];
+
+/* Weekly plan, Monday first. Each shift lists the people on it.
+   An empty list means the shift needs a volunteer. */
+var WEEKLY_PLAN = [
+  { day: "Monday",    am: ["Hema Sirasha"],            pm: ["Swetha"] },
+  { day: "Tuesday",   am: ["Sangeeta Patel"],          pm: ["Shilpa"] },
+  { day: "Wednesday", am: ["Divya Rupini"],            pm: ["Ajinkya"] },
+  { day: "Thursday",  am: ["Sulakshna"],               pm: ["Vishaka"] },
+  { day: "Friday",    am: ["Hema"],                    pm: [] },
+  { day: "Saturday",  am: ["Renuka"],                  pm: ["Kalyani"] },
+  { day: "Sunday",    am: ["Sreeja", "Padma Sakhi"],   pm: ["Roopal", "Sulakshna"] }
+];
+
+/* Planned absences. One line per absence, dates as YYYY-MM-DD.
+   person : name exactly as written above
+   from/to: first and last day away (same date for one day)
+   shifts : "am", "pm", or "both" (optional, default "both")
+   cover  : who is covering, for example "Backup One" (optional)
+   note   : short message for the group (optional)
+
+   Example:
+   { person: "Sreeja", from: "2026-11-08", to: "2026-11-08", shifts: "am", cover: "Backup One", note: "Travelling" }
+*/
+var ABSENCES = [
+];
+
+/* ==========================================================================
+   Page code. No need to edit below this line.
+   ========================================================================== */
+
+var DAY_MS = 86400000;
+var SUN_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+var MOON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>';
+
+function el(tag, cls, text) {
+  var n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+function iso(d) {
+  var m = String(d.getMonth() + 1).padStart(2, "0");
+  var day = String(d.getDate()).padStart(2, "0");
+  return d.getFullYear() + "-" + m + "-" + day;
+}
+function startOfDay(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+function mondayOf(d) {
+  var dow = (d.getDay() + 6) % 7; /* Monday = 0 */
+  return addDays(startOfDay(d), -dow);
+}
+function fmt(d, opts) { return d.toLocaleDateString(undefined, opts); }
+
+function absencesFor(dateIso, shift, person) {
+  return ABSENCES.filter(function (a) {
+    var s = a.shifts || "both";
+    return a.person === person && dateIso >= a.from && dateIso <= a.to && (s === "both" || s === shift);
+  });
+}
+
+function renderShift(dateIso, shiftKey, people) {
+  var box = el("div", "shift");
+  var label = el("div", "label");
+  label.innerHTML = (shiftKey === "am" ? SUN_SVG : MOON_SVG);
+  label.appendChild(document.createTextNode(shiftKey === "am" ? "Morning" : "Evening"));
+  box.appendChild(label);
+
+  if (people.length === 0) {
+    box.appendChild(el("div", "who", "Nobody yet"));
+    box.appendChild(el("span", "chip need", "Needs a volunteer"));
+    return box;
+  }
+  var who = el("div", "who");
+  var allAway = true;
+  var covers = [];
+  var notes = [];
+  people.forEach(function (p, i) {
+    var abs = absencesFor(dateIso, shiftKey, p);
+    var span = el("span", abs.length ? "gone" : "", p);
+    if (i > 0) who.appendChild(document.createTextNode(" & "));
+    who.appendChild(span);
+    if (abs.length) {
+      abs.forEach(function (a) {
+        if (a.cover && covers.indexOf(a.cover) < 0) covers.push(a.cover);
+        if (a.note) notes.push(p + ": " + a.note);
+      });
+    } else {
+      allAway = false;
+    }
+  });
+  box.appendChild(who);
+  var anyAway = people.some(function (p) { return absencesFor(dateIso, shiftKey, p).length > 0; });
+  if (anyAway) {
+    box.appendChild(el("span", "chip away", "Away"));
+    if (covers.length) box.appendChild(el("span", "chip cover", covers.join(" & ") + " covering"));
+    else if (allAway) box.appendChild(el("span", "chip need", "Needs cover"));
+    notes.forEach(function (n) { box.appendChild(el("div", "note", n)); });
+  }
+  return box;
+}
+
+function namesText(dateIso, shiftKey, people) {
+  if (!people.length) return "Needs a volunteer";
+  return people.map(function (p) {
+    return absencesFor(dateIso, shiftKey, p).length ? p + " (away)" : p;
+  }).join(" & ");
+}
+
+function render(which) {
+  var today = startOfDay(new Date());
+  var monday = mondayOf(today);
+  if (which === "next") monday = addDays(monday, 7);
+  var sunday = addDays(monday, 6);
+
+  document.getElementById("range").textContent =
+    fmt(monday, { month: "short", day: "numeric" }) + " to " + fmt(sunday, { month: "short", day: "numeric" });
+
+  var list = document.getElementById("days");
+  list.textContent = "";
+  var todayIso = iso(today);
+
+  WEEKLY_PLAN.forEach(function (plan, i) {
+    var d = addDays(monday, i);
+    var dIso = iso(d);
+    var li = el("li", "day" + (dIso === todayIso ? " is-today" : ""));
+    var head = el("div", "day-head");
+    head.appendChild(el("h3", "day-name", plan.day));
+    head.appendChild(el("span", "day-date", fmt(d, { month: "short", day: "numeric" })));
+    if (dIso === todayIso) head.appendChild(el("span", "pill", "Today"));
+    li.appendChild(head);
+    li.appendChild(renderShift(dIso, "am", plan.am));
+    li.appendChild(renderShift(dIso, "pm", plan.pm));
+    list.appendChild(li);
+  });
+
+  var tbox = document.getElementById("today");
+  tbox.textContent = "";
+  if (which === "this") {
+    var idx = (today.getDay() + 6) % 7;
+    var plan = WEEKLY_PLAN[idx];
+    tbox.appendChild(el("h2", null, "Today, " + fmt(today, { weekday: "long", month: "short", day: "numeric" })));
+    var grid = el("div", "today-grid");
+    [["am", "Morning", SUN_SVG], ["pm", "Evening", MOON_SVG]].forEach(function (s) {
+      var c = el("div");
+      var lab = el("div", "label");
+      lab.innerHTML = s[2];
+      lab.appendChild(document.createTextNode(s[1]));
+      c.appendChild(lab);
+      c.appendChild(el("div", "names", namesText(todayIso, s[0], plan[s[0]])));
+      grid.appendChild(c);
+    });
+    tbox.appendChild(grid);
+    tbox.hidden = false;
+  } else {
+    tbox.hidden = true;
+  }
+
+  document.getElementById("tab-this").setAttribute("aria-selected", which === "this" ? "true" : "false");
+  document.getElementById("tab-next").setAttribute("aria-selected", which === "next" ? "true" : "false");
+}
+
+function show(which) {
+  render(which);
+  try { history.replaceState(null, "", which === "next" ? "#next-week" : "#this-week"); } catch (e) {}
+}
+
+(function init() {
+  var bl = document.getElementById("backup-list");
+  BACKUPS.forEach(function (b) { bl.appendChild(el("div", "backup", b)); });
+  document.getElementById("tab-this").addEventListener("click", function () { show("this"); });
+  document.getElementById("tab-next").addEventListener("click", function () { show("next"); });
+  render(location.hash === "#next-week" ? "next" : "this");
+})();
+</script>
+</body>
+</html>
