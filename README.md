@@ -119,14 +119,16 @@ Configuration:
 - `GOOGLE_CLIENT_ID` (public text in `wrangler.toml`): Google OAuth web client ID. Authorize the JavaScript origin
   `https://templeservices.pages.dev`. No Google client secret is needed for this flow.
 - `RESEND_API_KEY` (secret in Pages settings): email-sending API key from a free Resend account.
-- `EMAIL_FROM` (text in `wrangler.toml`): `Temple Services <website@apexsteeldesigns.com>`, using the existing verified Resend domain.
+- `EMAIL_FROM` (text in `wrangler.toml`): pending a separate Temple Services sender on a verified domain. Do not use Apex-branded addresses.
 
 Only configured sign-in methods appear. When neither method is configured, the website
 remains read-only and the sign-in dialog asks users to contact the coordinator. Setting up
 a Google Cloud OAuth client and verifying an email-sending domain requires the owner's
-accounts. Keep the Resend account on its free plan; it has sending limits. The sending
-allowance is shared with the Apex Steel Designs website. Use a dedicated sending-only key
-restricted to apexsteeldesigns.com, saved as a Cloudflare secret rather than in source.
+accounts. Keep the Resend account on its free plan; it has sending limits shared across
+applications. Use a dedicated sending-only key restricted to the approved sender domain,
+saved as a Cloudflare secret rather than in source. The owner requires volunteer-facing
+communications to have no Apex branding. The existing Google consent support email must
+also be changed from the Apex account before this requirement is fully satisfied.
 
 Sessions use random server-stored tokens, hashed in D1, in Secure/HttpOnly/SameSite cookies.
 Google tokens are checked for signature, audience, issuer, expiration, verified email, and

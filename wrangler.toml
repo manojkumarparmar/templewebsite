@@ -3,7 +3,6 @@ compatibility_date = "2026-11-01"
 pages_build_output_dir = "./dist"
 
 [vars]
-EMAIL_FROM = "Temple Services <website@apexsteeldesigns.com>"
 GOOGLE_CLIENT_ID = "197416540652-d15ukn5jn4eot1gh01r70lv0h3d6efh7.apps.googleusercontent.com"
 
 [[d1_databases]]
