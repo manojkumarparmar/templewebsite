@@ -4,9 +4,20 @@ import { fixture } from './test-fixture.mjs';
 import { sha256, verifyGoogle } from '../server/volunteers.mjs';
 
 async function directory(call) { return (await (await call('volunteers')).json()).volunteers; }
+
+test('updated roster preserves assignments and uses the requested names', async () => {
+  const {call} = fixture({anonymous:true});
+  const people = await directory(call);
+  assert.equal(people.find(v => v.id === 'nanda-kumar-das').name, 'Nanda Kumar Das');
+  assert.equal(people.find(v => v.id === 'ajinkya').name, 'Ajinkya Pr');
+  assert.ok(people.filter(v => !['nanda-kumar-das','ajinkya'].includes(v.id)).every(v => v.name.endsWith(' Mtj')));
+  const vaidehi = people.find(v => v.id === 'vaidehi');
+  assert.equal(vaidehi.name, 'Vaidehi Mtj');
+  assert.deepEqual(vaidehi.assignments, []);
+});
 test('public directory hides emails and ordinary volunteers cannot manage records', async () => {
   const publicSite = fixture({ anonymous: true });
-  const people = await directory(publicSite.call); assert.equal(people.length, 15);
+  const people = await directory(publicSite.call); assert.equal(people.length, 16);
   assert.ok(people.every(v => !('email' in v)));
   const hema = people.find(v => v.id === 'hema-sirasha'); assert.deepEqual(hema.assignments, [{ weekday: 0, shift: 'am' }]);
   assert.equal((await publicSite.call('volunteers/save', { ...hema, email: '' })).status, 403);

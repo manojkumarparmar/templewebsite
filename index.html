@@ -178,7 +178,15 @@ h2, h3 { margin: 0; }
 .account-bar { margin-top: 12px; color: var(--muted); font-size: 14px; }
 .account-bar #account-label { margin-right: auto; }
 .main-tab { padding-inline: 8px; }
-.volunteer-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 14px; }
+.volunteer-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.directory-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.directory-controls select { width: 100%; min-height: 44px; padding: 8px; border: 1px solid var(--field); border-radius: 10px; font: inherit; color: var(--fg); background: var(--surface); }
+.directory-controls select:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.volunteer-section { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+@media (min-width: 760px) {
+  .volunteer-card { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); align-items: start !important; gap: 20px !important; }
+  .volunteer-editor, .volunteer-protected { grid-column: 1 / -1; }
+}
 .volunteer-card { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); min-width: 0; }
 .volunteer-card h3 { font-family: var(--font-display); font-size: 22px; overflow-wrap: anywhere; }
 .volunteer-card p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -239,6 +247,13 @@ dialog .auth-heading h2 { font-size: 22px; }
   <div class="tab-panel" id="volunteers-panel" role="tabpanel" aria-labelledby="volunteers-tab" hidden>
     <div class="directory-heading"><div><h2>Volunteers</h2><p class="note">Recurring service assignments, availability, and roles.</p></div><button type="button" class="btn-small" id="add-volunteer" hidden>Add volunteer</button></div>
     <p class="note" id="volunteers-status" role="status">Loading volunteers…</p>
+    <div class="directory-controls" role="search" aria-label="Filter volunteers">
+      <label class="field">Search volunteers<input id="volunteer-search" type="search" placeholder="Name or availability"></label>
+      <label class="field">Role<select id="volunteer-role"><option value="">All roles</option><option value="super-admin">Super-admin</option><option value="admin">Admin</option><option value="headpujari">Head pujari</option><option value="coordinator">Coordinator</option><option value="volunteer">Volunteer</option><option value="backup">Backup</option><option value="other">Other</option></select></label>
+      <label class="field">Service day<select id="volunteer-day"><option value="">All days</option><option value="0">Monday</option><option value="1">Tuesday</option><option value="2">Wednesday</option><option value="3">Thursday</option><option value="4">Friday</option><option value="5">Saturday</option><option value="6">Sunday</option></select></label>
+      <label class="field">Sort by<select id="volunteer-sort"><option value="name">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="shifts">Most recurring shifts</option></select></label>
+    </div>
+    <p class="note" id="volunteer-count" role="status" aria-live="polite"></p>
     <div id="new-volunteer"></div>
     <div class="volunteer-grid" id="volunteer-list"></div>
   </div>
@@ -266,13 +281,13 @@ var BACKUPS = ["Backup One", "Backup Two"];
 /* Weekly plan, Monday first. Each shift lists the people on it.
    An empty list means the shift needs a volunteer. */
 var WEEKLY_PLAN = [
-  { day: "Monday",    am: ["Hema Sirasha"],            pm: ["Swetha"] },
-  { day: "Tuesday",   am: ["Sangeeta Patel"],          pm: ["Shilpa"] },
-  { day: "Wednesday", am: ["Divya Rupini"],            pm: ["Ajinkya"] },
-  { day: "Thursday",  am: ["Sulakshna"],               pm: ["Vishaka"] },
-  { day: "Friday",    am: ["Hema"],                    pm: [] },
-  { day: "Saturday",  am: ["Renuka"],                  pm: ["Kalyani"] },
-  { day: "Sunday",    am: ["Sreeja", "Padma Sakhi"],   pm: ["Roopal", "Sulakshna"] }
+  { day: "Monday",    am: ["Hema Sirasha Mtj"],            pm: ["Swetha Mtj"] },
+  { day: "Tuesday",   am: ["Sangeeta Patel Mtj"],          pm: ["Shilpa Mtj"] },
+  { day: "Wednesday", am: ["Divya Rupini Mtj"],            pm: ["Ajinkya Pr"] },
+  { day: "Thursday",  am: ["Sulakshna Mtj"],               pm: ["Vishaka Mtj"] },
+  { day: "Friday",    am: ["Hema Mtj"],                    pm: [] },
+  { day: "Saturday",  am: ["Renuka Mtj"],                  pm: ["Kalyani Mtj"] },
+  { day: "Sunday",    am: ["Sreeja Mtj", "Padma Sakhi Mtj"],   pm: ["Roopal Mtj", "Sulakshna Mtj"] }
 ];
 
 /* Planned absences. One line per absence, dates as YYYY-MM-DD.
@@ -283,7 +298,7 @@ var WEEKLY_PLAN = [
    note   : short message for the group (optional)
 
    Example:
-   { person: "Sreeja", from: "2026-11-08", to: "2026-11-08", shifts: "am", cover: "Backup One", note: "Travelling" }
+   { person: "Sreeja Mtj", from: "2026-11-08", to: "2026-11-08", shifts: "am", cover: "Backup One", note: "Travelling" }
 */
 var ABSENCES = [
 ];

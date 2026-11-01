@@ -57,6 +57,26 @@ async function fixture() {
   return { nodes, context, setFail(value) { fail = value; }, get updates() { return updates; } };
 }
 const buttons = (node, text) => find(node, n => n.tag === 'button' && n.text === text);
+
+test('directory combines search, role and service-day filters and supports sorting', async () => {
+  const { nodes, context } = await fixture();
+  context.volunteerDirectory = [
+    {name:'Vaidehi Mtj',roles:['volunteer'],assignments:[],active:true,availabilityNotes:''},
+    {name:'Ajinkya Pr',roles:['backup'],assignments:[{weekday:2,shift:'pm'}],active:true,availabilityNotes:'Evenings'},
+    {name:'Swetha Mtj',roles:['volunteer'],assignments:[{weekday:0,shift:'pm'}],active:true,availabilityNotes:''}
+  ];
+  nodes['volunteer-sort'].value = 'name-desc';
+  nodes['volunteer-sort'].events.change();
+  assert.equal(find(nodes['volunteer-list'], n => n.tag === 'h3')[0].text, 'Vaidehi Mtj');
+  nodes['volunteer-search'].value = 'evenings';
+  nodes['volunteer-role'].value = 'backup';
+  nodes['volunteer-day'].value = '2';
+  nodes['volunteer-search'].events.input();
+  assert.equal(nodes['volunteer-count'].text, '1 of 3 volunteers');
+  assert.equal(find(nodes['volunteer-list'], n => n.tag === 'h3')[0].text, 'Ajinkya Pr');
+  nodes['volunteer-day'].value = '0'; nodes['volunteer-day'].events.change();
+  assert.equal(nodes['volunteer-count'].text, '0 of 3 volunteers');
+});
 test('shared load updates preserve drafts during refresh and render summaries after saving', async () => {
   const f = await fixture(), { nodes, context } = f;
   assert.equal(nodes.days.children.length, 8);

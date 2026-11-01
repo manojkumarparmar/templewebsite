@@ -63,24 +63,42 @@ async function refreshVolunteers() {
 function renderVolunteers() {
   var list = document.getElementById('volunteer-list'); list.textContent = '';
   document.getElementById('volunteers-status').textContent = managesVolunteers() ? 'You can manage volunteer records and roles. Sign-in emails are visible only to administrators.' : 'Only administrators can edit volunteer records.';
-  volunteerDirectory.forEach(function (volunteer) {
+  var search = document.getElementById('volunteer-search').value.trim().toLowerCase();
+  var role = document.getElementById('volunteer-role').value;
+  var day = document.getElementById('volunteer-day').value;
+  var sort = document.getElementById('volunteer-sort').value;
+  var visible = volunteerDirectory.filter(function (v) {
+    return (!search || (v.name + ' ' + v.availabilityNotes).toLowerCase().indexOf(search) >= 0)
+      && (!role || v.roles.indexOf(role) >= 0)
+      && (day === '' || v.assignments.some(function (a) { return a.weekday === Number(day); }));
+  }).sort(function (a, b) {
+    if (sort === 'shifts' && a.assignments.length !== b.assignments.length) return b.assignments.length - a.assignments.length;
+    return (sort === 'name-desc' ? -1 : 1) * a.name.localeCompare(b.name);
+  });
+  document.getElementById('volunteer-count').textContent = visible.length + ' of ' + volunteerDirectory.length + ' volunteers';
+  if (!visible.length) list.appendChild(el('p', 'note', 'No volunteers match these filters. Try another name, role, or day.'));
+  visible.forEach(function (volunteer) {
     var card = el('article', 'volunteer-card' + (volunteer.active ? '' : ' inactive-volunteer'));
-    card.appendChild(el('h3', null, volunteer.name));
+    var identity = el('div', 'volunteer-section'); card.appendChild(identity);
+    identity.appendChild(el('h3', null, volunteer.name));
     var roles = el('div', 'volunteer-roles');
     volunteer.roles.forEach(function (role) { roles.appendChild(el('span', 'chip note-kind', role)); });
     if (!volunteer.active) roles.appendChild(el('span', 'chip away', 'Inactive'));
-    card.appendChild(roles);
+    identity.appendChild(roles);
+    var service = el('div', 'volunteer-section'); card.appendChild(service);
+    service.appendChild(el('div', 'label', 'Recurring service'));
     var assignments = el('ul', 'assignment-list');
     volunteer.assignments.forEach(function (assignment) { assignments.appendChild(el('li', null, WEEKDAYS[assignment.weekday] + ' · ' + (assignment.shift === 'am' ? 'Morning' : 'Evening'))); });
-    if (volunteer.assignments.length) card.appendChild(assignments);
-    else card.appendChild(el('p', 'note', 'No recurring shifts assigned.'));
-    card.appendChild(el('div', 'label', 'Availability'));
-    card.appendChild(el('p', 'note', volunteer.availabilityNotes || 'No availability notes added.'));
-    if (managesVolunteers() && volunteer.email) card.appendChild(el('p', 'note', volunteer.email));
+    if (volunteer.assignments.length) service.appendChild(assignments);
+    else service.appendChild(el('p', 'note', 'No recurring shifts assigned.'));
+    var availability = el('div', 'volunteer-section'); card.appendChild(availability);
+    availability.appendChild(el('div', 'label', 'Availability'));
+    availability.appendChild(el('p', 'note', volunteer.availabilityNotes || 'No availability notes added.'));
+    if (managesVolunteers() && volunteer.email) identity.appendChild(el('p', 'note', volunteer.email));
     var canEdit = managesVolunteers() && (!volunteer.isSuperAdmin || currentUser.isSuperAdmin);
     if (volunteer.isSuperAdmin) card.appendChild(el('p', 'volunteer-protected', 'Protected super-admin · role cannot be removed.'));
     if (canEdit) {
-      var button = el('button', 'btn-small', 'Edit volunteer'); button.type = 'button'; button.setAttribute('aria-expanded', 'false'); card.appendChild(button);
+      var button = el('button', 'btn-small', 'Edit volunteer'); button.type = 'button'; button.setAttribute('aria-expanded', 'false'); identity.appendChild(button);
       var editor = el('div', 'volunteer-editor'); editor.hidden = true; card.appendChild(editor);
       button.addEventListener('click', function () {
         editor.hidden = !editor.hidden; button.setAttribute('aria-expanded', String(!editor.hidden));
@@ -148,6 +166,9 @@ function volunteerForm(volunteer, close) {
   return form;
 }
 async function initPeople() {
+  ['volunteer-search', 'volunteer-role', 'volunteer-day', 'volunteer-sort'].forEach(function (id) {
+    document.getElementById(id).addEventListener(id === 'volunteer-search' ? 'input' : 'change', renderVolunteers);
+  });
   document.getElementById('sign-in').addEventListener('click', openSignIn);
   document.getElementById('auth-close').addEventListener('click', function () { document.getElementById('auth-dialog').close(); });
   document.getElementById('sign-out').addEventListener('click', async function () {

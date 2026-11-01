@@ -83,6 +83,11 @@ Opening `index.html` directly previews the layout but cannot use the shared API.
 
 ## Volunteers and access
 
+The directory uses full-width volunteer rows with search, role and service-day filters,
+and name or recurring-shift sorting. Apply `migrations/0003_volunteer_names.sql` to the
+existing production D1 database to add Vaidehi Mtj and update the requested display names.
+This migration preserves IDs, emails, roles, and assignments. Do not reapply migration 0002.
+
 The Volunteers tab lists active volunteers, recurring assignments, availability notes, and
 multiple roles. Administrators also see sign-in emails and inactive records. Changes to
 recurring assignments update the schedule; volunteers with the backup role populate the
