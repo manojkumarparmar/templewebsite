@@ -32,7 +32,7 @@ async function openSignIn() {
   } catch (error) { status.textContent = error.message; }
 }
 function updateAccount() {
-  document.getElementById('account-label').textContent = currentUser ? 'Signed in as ' + currentUser.name : 'View the schedule without signing in.';
+  document.getElementById('account-label').textContent = currentUser ? 'Signed in as ' + currentUser.name : '';
   document.getElementById('sign-in').hidden = !!currentUser;
   document.getElementById('sign-out').hidden = !currentUser;
   document.getElementById('add-volunteer').hidden = !managesVolunteers();
