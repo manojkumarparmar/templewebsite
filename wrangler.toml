@@ -1,0 +1,13 @@
+name = "templeservices"
+compatibility_date = "2026-11-01"
+pages_build_output_dir = "./dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "templeservices-db"
+database_id = "b7b70a10-5530-44f4-a02b-a7176d940102"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "templeservices-photos"

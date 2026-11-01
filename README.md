@@ -9,7 +9,8 @@ A sticky tab bar keeps Schedule and Instructions available while scrolling. Sche
 default and shows the eight-day schedule and backups. Each shift contains load updates, notes, and photos. Service instructions have
 their own tab.
 
-There is no build step. The whole site is `index.html`.
+The page is `index.html`. A small build copies it into `dist`; Pages Functions handle the
+shared API. Server files, tests, and database migrations are excluded from static hosting.
 
 ## Updating the schedule
 
@@ -36,9 +37,12 @@ multiple photos. Check only the tasks completed in this update; unchecked means 
 A checklist-only, notes-only, or photos-only update can be submitted. Saved updates appear
 inside the shift with the volunteer name, time, load checklist summary, notes, and photos.
 
-Updates are saved in the browser on this device. Other volunteers cannot see them yet, and
-clearing browser data removes them. Photos are resized to 800 pixels. If saving fails, the
-form keeps the draft and attachments. Previous notes remain visible on their scheduled day.
+Updates are saved in Cloudflare D1 and shared with every visitor. Photos are resized to
+800 pixels and saved in a private R2 bucket, served through the website API. Each update
+accepts up to four photos, at most 1 MB each. If saving fails, the form keeps the draft and
+attachments. The schedule refreshes every 30 seconds and when returning to the page; open
+forms keep their drafts. Service dates use America/Chicago. Experimental device-only data
+is ignored. Only the remembered volunteer name remains in browser storage.
 
 ## Backup requests
 
@@ -47,18 +51,40 @@ optional notes. The shift is highlighted until someone uses **Opt for backup** a
 their name. The backup volunteer then replaces the scheduled name, with a backup label and
 the original assignment retained in the explanation. A confirmed backup can use **Need backup**
 again; the form starts with their name and reopens the shift for another volunteer. Prior
-backup assignments are retained in device storage. Requests and offers are saved on this
-device only; they are not shared with other volunteers yet.
+backup assignments are retained in D1. Requests and offers are shared with everyone.
+Conditional version checks prevent two volunteers from claiming the same request.
 
-## Publishing on Cloudflare Pages
+## Shared storage and publishing
 
-1. In the Cloudflare dashboard, go to Workers & Pages, then Create, then Pages, and connect this repository.
-2. Leave the build command empty and set the output directory to `/`.
-3. Deploy. Share the resulting `*.pages.dev` link with the WhatsApp group.
+Cloudflare Pages project: `templeservices` (production branch `main`).
 
-Every push to `main` redeploys the site.
+- Build command: `node scripts/build.mjs`
+- Build output: `dist`
+- D1 binding `DB`: `templeservices-db`
+- R2 binding `PHOTOS`: `templeservices-photos` (Standard, public bucket access disabled)
+- Database schema: `migrations/0001_shared_storage.sql`
+- Bindings are defined in `wrangler.toml` and applied on deployment.
 
-## Later phases
+The database and its tables were created in the Cloudflare dashboard. For a fresh database,
+apply the schema using the D1 console or `npx wrangler d1 migrations apply DB --remote`.
+Every push to `main` redeploys the website and Pages Functions.
 
-Sharing load updates, notes, and photos between all volunteers, submitting planned
-absences and offering to cover shifts need a small shared database. They are not built yet.
+Run checks with Node.js 24 or later:
+
+```sh
+node --test tests/*.test.mjs
+node scripts/build.mjs
+npx wrangler pages functions build functions --outdir .wrangler/verify
+```
+
+For local shared-storage development, build first, then run `npx wrangler pages dev dist`.
+Apply the schema locally using `npx wrangler d1 migrations apply DB --local`.
+Opening `index.html` directly previews the layout but cannot use the shared API.
+
+## Access
+
+The website currently has no sign-in. Anyone who can open the site can read updates and
+photos and submit notes or backup changes. The R2 bucket itself stays private; only photos
+attached to saved updates can be retrieved through the API. Server validation checks field
+sizes, dates, photo limits, and the origin of browser submissions. Volunteer sign-in can be
+added separately if access should be restricted.

@@ -189,6 +189,7 @@ h2, h3 { margin: 0; }
 
   <div class="tab-panel" id="schedule-panel" role="tabpanel" aria-labelledby="schedule-tab">
   <div class="range" id="range"></div>
+  <div class="note" id="sync-status" role="status">Loading shared updates…</div>
 
   <ul class="days" id="days" aria-label="Daily schedule"></ul>
 
@@ -268,10 +269,36 @@ var INSTRUCTIONS = [
 var SUN_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
 var MOON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>';
 
-/* Updates are saved on this device. Legacy notes remain readable. */
-var LS_LOADS = "tls.loads.v1";
-var LS_BACKUPS = "tls.backups.v1";
-var LS_NOTES = "tls.notes.v1";
+/* Shared updates are stored in Cloudflare D1 and R2. */
+var sharedUpdates = [], sharedBackups = {}, sharedReady = false, syncing = false;
+var sharedListeners = [];
+function templeToday() {
+  var parts = new Intl.DateTimeFormat("en-US", {timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit"}).formatToParts(new Date());
+  function part(type) { return parts.find(function (p) { return p.type === type; }).value; }
+  return new Date(Number(part("year")), Number(part("month")) - 1, Number(part("day")));
+}
+async function api(path, data) {
+  var response = await fetch("/api/" + path, data ? {signal: AbortSignal.timeout(30000), method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(data)} : {signal: AbortSignal.timeout(15000), cache: "no-store"});
+  var result;
+  try { result = await response.json(); } catch (e) { throw new Error("Shared storage is unavailable. Please try again."); }
+  if (!response.ok) { var error = new Error(result.error || "Could not save. Please try again."); error.status = response.status; throw error; }
+  return result;
+}
+async function syncShared(force) {
+  if (syncing) { await syncing; if (force) return syncShared(); return; }
+  syncing = (async function () {
+    try {
+      var today = templeToday();
+      var data = await api("schedule?from=" + iso(addDays(today, -1)) + "&to=" + iso(addDays(today, 6)));
+      sharedUpdates = data.updates; sharedBackups = data.backups; sharedReady = true;
+      sharedListeners.forEach(function (listener) { listener(); });
+      document.getElementById("sync-status").textContent = "Updates are shared with everyone. Refreshes automatically every 30 seconds.";
+    } catch (e) {
+      document.getElementById("sync-status").textContent = "Could not refresh shared updates. " + (sharedReady ? "Showing the last loaded data. " : "") + "Please check your connection; we will retry automatically.";
+    }
+  })();
+  try { await syncing; } finally { syncing = false; }
+}
 var LS_NAME = "tls.name";
 function lsGet(key, fallback) {
   try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
@@ -344,7 +371,7 @@ function renderShift(dateIso, shiftKey, people) {
 }
 
 function render() {
-  var today = startOfDay(new Date());
+  var today = templeToday();
   var firstDay = addDays(today, -1);
   var lastDay = addDays(today, 6);
 
@@ -352,6 +379,7 @@ function render() {
     fmt(firstDay, { month: "short", day: "numeric" }) + " to " + fmt(lastDay, { month: "short", day: "numeric" });
 
   var list = document.getElementById("days");
+  sharedListeners = [];
   list.textContent = "";
   var todayIso = iso(today);
 
@@ -369,12 +397,6 @@ function render() {
     ["am", "pm"].forEach(function (shiftKey) {
       li.appendChild(renderScheduledShift(dIso, shiftKey, plan[shiftKey], todayIso));
     });
-    var legacy = lsGet(LS_NOTES, []).filter(function (n) { return n.date === dIso; });
-    if (legacy.length) {
-      var oldNotes = el("div", "legacy-notes note-list");
-      legacy.forEach(function (n) { oldNotes.appendChild(renderUpdate(n)); });
-      li.appendChild(oldNotes);
-    }
     list.appendChild(li);
   }
 
@@ -411,7 +433,7 @@ function renderScheduledShift(dateIso, shiftKey, people, todayIso) {
   var formArea = el("div", "backup-form-area"); shift.appendChild(formArea); shift.appendChild(updates);
   var key = dateIso + ":" + shiftKey;
   function refresh() {
-    var request = lsGet(LS_BACKUPS, {})[key];
+    var request = sharedBackups[key];
     var pending = request && !request.cover;
     shift.className = "shift" + (pending ? " backup-needed" : "");
     details.textContent = ""; backupAction.textContent = ""; formArea.textContent = "";
@@ -430,7 +452,7 @@ function renderScheduledShift(dateIso, shiftKey, people, todayIso) {
       if (request.notes) details.appendChild(el("div", "note", request.notes));
     }
     if (dateIso < todayIso) return;
-    var button = el("button", "btn-small", pending ? "Opt for backup" : "Need backup"); button.type = "button";
+    var button = el("button", "btn-small", pending ? "Opt for backup" : "Need backup"); button.type = "button"; button.disabled = !sharedReady;
     button.setAttribute("aria-expanded", "false");
     var formId = "backup-" + key.replace(":", "-"); button.setAttribute("aria-controls", formId);
     backupAction.appendChild(button);
@@ -442,7 +464,7 @@ function renderScheduledShift(dateIso, shiftKey, people, todayIso) {
     label.appendChild(name); form.appendChild(label);
     var notes = el("textarea"); notes.rows = 3; notes.maxLength = 1000;
     if (!pending) { var notesLabel = el("label", "field", "Notes (optional)"); notesLabel.appendChild(notes); form.appendChild(notesLabel); }
-    form.appendChild(el("p", "note", "Saved on this device only. Other volunteers cannot see this request or offer yet."));
+    form.appendChild(el("p", "note", "Your request or offer will be visible to everyone using this schedule."));
     var row = el("div", "photo-row");
     var submit = el("button", "btn-primary", pending ? "Confirm backup" : "Submit request"); submit.type = "submit";
     var cancel = el("button", "btn-outline", "Cancel"); cancel.type = "button";
@@ -450,20 +472,26 @@ function renderScheduledShift(dateIso, shiftKey, people, todayIso) {
     var status = el("div", "note"); status.setAttribute("role", "status"); form.appendChild(status); formArea.appendChild(form);
     button.addEventListener("click", function () { form.hidden = !form.hidden; button.setAttribute("aria-expanded", String(!form.hidden)); if (!form.hidden) name.focus(); });
     cancel.addEventListener("click", function () { form.hidden = true; button.setAttribute("aria-expanded", "false"); button.focus(); });
-    form.addEventListener("submit", function (event) {
+    form.addEventListener("submit", async function (event) {
       event.preventDefault();
       if (!name.value.trim()) { status.textContent = "Please enter a name."; name.focus(); return; }
-      var all = lsGet(LS_BACKUPS, {});
-      var current = all[key];
-      if (pending && (!current || current.cover)) { status.textContent = "This backup request has changed. Refresh the page to see its latest status."; return; }
-      all[key] = pending ? Object.assign({}, current, {cover: name.value.trim(), coveredAt: new Date().toISOString()}) : {person: name.value.trim(), notes: notes.value.trim(), requestedAt: new Date().toISOString(), wasBackup: !!(current && current.cover), history: current ? (current.history || []).concat([current.cover ? {person: current.person, notes: current.notes, cover: current.cover, requestedAt: current.requestedAt, coveredAt: current.coveredAt} : {person: current.person, notes: current.notes, requestedAt: current.requestedAt}]) : []};
-      if (!lsSet(LS_BACKUPS, all)) { status.textContent = "Could not save on this device. Your draft is still here; try again."; return; }
+      if (submit.disabled) return;
+      submit.disabled = true; status.textContent = "Saving…";
+      try {
+        var result = await api("backups", {date: dateIso, shift: shiftKey, action: pending ? "offer" : "request", name: name.value.trim(), notes: notes.value.trim(), version: request ? request.version : 0});
+        sharedBackups[key] = result.state;
+      } catch (error) {
+        status.textContent = error.message;
+        if (error.status === 409) { await syncShared(true); status.textContent = error.message + " Close this form to review the latest status."; }
+        submit.disabled = false; return;
+      }
       refresh();
       var focusTarget = backupAction.querySelector("button");
       if (focusTarget) focusTarget.focus();
       else { details.tabIndex = -1; details.focus(); }
     });
   }
+  sharedListeners.push(function () { var open = formArea.querySelector("form"); if (!open || open.hidden) refresh(); });
   refresh();
   return shift;
 }
@@ -471,7 +499,7 @@ function renderScheduledShift(dateIso, shiftKey, people, todayIso) {
 /* ---- Load updates ---- */
 var LOADS = [["kitchen", "Kitchen load"], ["pujari", "Pujari load"], ["deity", "Deity load"]];
 var STAGES = [["washed", "Washed"], ["dried", "Dried"], ["folded", "Folded"]];
-function loadUpdates() { return lsGet(LS_LOADS, []); }
+function loadUpdates() { return sharedUpdates; }
 function renderUpdate(entry) {
   var card = el("div", "entry");
   var head = el("div", "entry-head");
@@ -491,7 +519,7 @@ function renderUpdate(entry) {
   if (entry.text) card.appendChild(el("div", "entry-text", entry.text));
   var photos = entry.photos || (entry.photo ? [entry.photo] : []);
   photos.forEach(function (url) {
-    if (String(url).indexOf("data:image/jpeg;base64,") !== 0) return;
+    if (String(url).indexOf("/api/photos/") !== 0) return;
     var image = el("img", "entry-photo");
     image.src = url; image.alt = "Laundry photo from " + (entry.who || "Volunteer");
     card.appendChild(image);
@@ -501,7 +529,7 @@ function renderUpdate(entry) {
 function renderLoadNotes(dateIso, shiftKey, actions, allowNotes) {
   var box = el("div", "load-notes");
   var button = el("button", "btn-small", "Add Notes");
-  button.type = "button";
+  button.type = "button"; button.disabled = !sharedReady;
   var formId = "update-" + dateIso + "-" + shiftKey;
   button.setAttribute("aria-expanded", "false");
   button.setAttribute("aria-controls", formId);
@@ -533,7 +561,8 @@ function renderLoadNotes(dateIso, shiftKey, actions, allowNotes) {
   var file = el("input"); file.type = "file"; file.accept = "image/*"; file.multiple = true;
   photoLabel.appendChild(file); form.appendChild(photoLabel);
   var previews = el("div", "photo-row"); form.appendChild(previews);
-  var photos = [], processing = false;
+  var photos = [], processing = false, saving = false, draftId = null;
+  form.addEventListener("input", function () { if (!saving) draftId = null; });
   var status = el("div", "note"); status.setAttribute("role", "status");
   var actions = el("div", "photo-row");
   var submit = el("button", "btn-primary", "Submit Notes"); submit.type = "submit";
@@ -558,12 +587,13 @@ function renderLoadNotes(dateIso, shiftKey, actions, allowNotes) {
     photos.forEach(function (url, index) {
       var holder = el("div", "photo-row"); var image = el("img", "thumb"); image.src = url; image.alt = "Attached photo " + (index + 1);
       var remove = el("button", "btn-outline", "Remove photo " + (index + 1)); remove.type = "button";
-      remove.addEventListener("click", function () { photos.splice(index, 1); showPhotos(); });
+      remove.addEventListener("click", function () { photos.splice(index, 1); draftId = null; showPhotos(); });
       holder.appendChild(image); holder.appendChild(remove); previews.appendChild(holder);
     });
   }
   file.addEventListener("change", async function () {
-    processing = true; submit.disabled = true; file.disabled = true; status.textContent = "Preparing photos…";
+    if (photos.length + file.files.length > 4) { status.textContent = "Attach up to four photos per update."; file.value = ""; return; }
+    draftId = null; processing = true; submit.disabled = true; file.disabled = true; status.textContent = "Preparing photos…";
     var failures = 0;
     for (var selected of Array.from(file.files || [])) {
       var url = await new Promise(function (resolve) { downscale(selected, resolve); });
@@ -572,21 +602,35 @@ function renderLoadNotes(dateIso, shiftKey, actions, allowNotes) {
     showPhotos(); file.value = ""; file.disabled = false; processing = false; submit.disabled = false;
     status.textContent = failures ? "Some photos could not be read. Please try them again." : "";
   });
-  form.addEventListener("submit", function (event) {
-    event.preventDefault(); if (processing) return;
+  form.addEventListener("submit", async function (event) {
+    event.preventDefault(); if (processing || saving) return;
     var loads = {}, any = false;
     LOADS.forEach(function (load) {
       loads[load[0]] = {};
       STAGES.forEach(function (stage) { var checked = checks[load[0]][stage[0]].checked === true; loads[load[0]][stage[0]] = checked; any = any || checked; });
     });
     if (!any && !text.value.trim() && !photos.length) { status.textContent = "Check a completed task, add a note, or attach a photo."; return; }
-    var entry = {id: Date.now(), date: dateIso, shift: shiftKey, who: name.value.trim() || "Volunteer", loads: loads, text: text.value.trim(), photos: photos.slice(), time: new Date().toISOString()};
-    if (!lsSet(LS_LOADS, [entry].concat(loadUpdates()))) { status.textContent = "Could not save. Device storage may be full. Remove a photo and try again; your draft is still here."; return; }
+    draftId = draftId || crypto.randomUUID();
+    var entry = {id: draftId, date: dateIso, shift: shiftKey, who: name.value.trim() || "Volunteer", loads: loads, text: text.value.trim(), photos: photos.slice()};
+    saving = true; submit.disabled = true; status.textContent = "Saving…";
+    var fields = form.querySelectorAll("input, textarea, button");
+    fields.forEach(function (field) { field.disabled = true; });
+    try {
+      await api("updates", entry);
+    } catch (error) {
+      status.textContent = error.message + " Your draft is still here.";
+      return;
+    } finally {
+      saving = false; fields.forEach(function (field) { field.disabled = false; });
+    }
+    draftId = null;
     lsSet(LS_NAME, name.value.trim());
     LOADS.forEach(function (load) { STAGES.forEach(function (stage) { checks[load[0]][stage[0]].checked = false; }); });
     text.value = ""; photos = []; showPhotos(); status.textContent = "";
-    refreshSummary(); close(); saved.textContent = "Saved on this device. Other volunteers cannot see this update yet.";
+    close(); saved.textContent = "Saved and shared with everyone.";
+    await syncShared(true);
   });
+  sharedListeners.push(function () { button.disabled = !sharedReady; refreshSummary(); });
   refreshSummary();
   return box;
 }
@@ -637,12 +681,15 @@ function initTabs() {
   });
 }
 
-(function init() {
+(async function init() {
   initTabs();
   var bl = document.getElementById("backup-list");
   BACKUPS.forEach(function (b) { bl.appendChild(el("div", "backup", b)); });
   renderInstructions();
   render();
+  await syncShared();
+  setInterval(function () { if (!document.hidden) syncShared(); }, 30000);
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) syncShared(); });
 })();
 </script>
 </body>

@@ -1,0 +1,81 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import { readFile } from 'node:fs/promises';
+
+const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+function find(node, predicate) { return [...(predicate(node) ? [node] : []), ...(node.children || []).flatMap(child => find(child, predicate))]; }
+class Element {
+  constructor(tag) { this.tag = tag; this.children = []; this.attrs = {}; this.events = {}; this.value = ''; this.checked = false; this.hidden = false; }
+  set textContent(value) { this.text = value; this.children = []; }
+  appendChild(node) { this.children.push(node); return node; }
+  setAttribute(key, value) { this.attrs[key] = value; }
+  getAttribute(key) { return this.attrs[key]; }
+  addEventListener(key, handler) { this.events[key] = handler; }
+  focus() { this.focused = true; }
+  querySelector(tag) { return this.querySelectorAll(tag)[0] || null; }
+  querySelectorAll(tags) { return find(this, n => tags.split(',').map(t => t.trim()).includes(n.tag)); }
+}
+async function fixture() {
+  const nodes = {};
+  for (const match of html.matchAll(/<[^>]*id="([^"]+)"[^>]*>/g)) {
+    const node = nodes[match[1]] = new Element();
+    for (const attr of match[0].matchAll(/([\w-]+)="([^"]*)"/g)) node.attrs[attr[1]] = attr[2];
+  }
+  let updates = [], backups = {}, fail = false;
+  const context = vm.createContext({
+    crypto, AbortSignal, setInterval() {},
+    document: { getElementById: id => { assert.ok(nodes[id], id); return nodes[id]; }, createElement: tag => new Element(tag), createTextNode: text => ({ text }), addEventListener() {} },
+    localStorage: { getItem() { return null; }, setItem() {} },
+    async fetch(path, options) {
+      if (fail) throw new Error('Connection failed');
+      if (!options.body) return Response.json({ updates, backups });
+      const data = JSON.parse(options.body);
+      if (path === '/api/updates') updates.unshift({ ...data, time: new Date().toISOString() });
+      if (path === '/api/backups') {
+        const key = data.date + ':' + data.shift;
+        backups[key] = data.action === 'request' ? { person: data.name, notes: data.notes, version: data.version + 1 } : { ...backups[key], cover: data.name, version: data.version + 1 };
+        return Response.json({ state: backups[key] });
+      }
+      return Response.json({ saved: true });
+    }
+  });
+  await vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
+  return { nodes, context, setFail(value) { fail = value; }, get updates() { return updates; } };
+}
+const buttons = (node, text) => find(node, n => n.tag === 'button' && n.text === text);
+test('shared load updates preserve drafts during refresh and render summaries after saving', async () => {
+  const f = await fixture(), { nodes, context } = f;
+  assert.equal(nodes.days.children.length, 8);
+  assert.equal(buttons(nodes.days.children[0], 'Add Notes').length, 2);
+  assert.equal(buttons(nodes.days.children[2], 'Add Notes').length, 0);
+  const shift = nodes.days.children[1].children[1];
+  buttons(shift, 'Add Notes')[0].events.click();
+  const form = find(shift, n => n.tag === 'form' && n.id.startsWith('update-'))[0];
+  const text = find(form, n => n.tag === 'textarea')[0]; text.value = 'Draft';
+  const checks = find(form, n => n.type === 'checkbox'); checks[0].checked = true;
+  await context.syncShared(); assert.equal(form.hidden, false); assert.equal(text.value, 'Draft');
+  f.setFail(true); await form.events.submit({ preventDefault() {} });
+  assert.equal(form.hidden, false); assert.equal(text.value, 'Draft'); assert.equal(checks[0].checked, true);
+  f.setFail(false); await form.events.submit({ preventDefault() {} });
+  assert.equal(form.hidden, true); assert.equal(f.updates.length, 1);
+  assert.equal(find(shift, n => n.className === 'entry').length, 1);
+  assert.equal(f.updates[0].shift, 'am'); assert.equal(f.updates[0].loads.kitchen.washed, true);
+});
+test('backup changes use shared state while preserving laundry drafts', async () => {
+  const { nodes, context } = await fixture(); const shift = nodes.days.children[1].children[1];
+  const noteForm = find(shift, n => n.tag === 'form' && n.id.startsWith('update-'))[0];
+  find(noteForm, n => n.tag === 'textarea')[0].value = 'Keep my draft';
+  let form = find(shift, n => n.tag === 'form' && n.id.startsWith('backup-'))[0];
+  find(form, n => n.type === 'text')[0].value = 'Original';
+  await form.events.submit({ preventDefault() {} });
+  assert.equal(buttons(shift, 'Opt for backup').length, 1);
+  form = find(shift, n => n.tag === 'form' && n.id.startsWith('backup-'))[0];
+  find(form, n => n.type === 'text')[0].value = 'Replacement';
+  await form.events.submit({ preventDefault() {} });
+  assert.equal(buttons(shift, 'Need backup').length, 1);
+  assert.ok(find(shift, n => n.text === 'Replacement').length);
+  assert.equal(find(noteForm, n => n.tag === 'textarea')[0].value, 'Keep my draft');
+  await context.syncShared();
+  assert.ok(find(shift, n => n.text === 'Replacement').length);
+});
