@@ -114,7 +114,38 @@ The directory is seeded from the original recurring schedule, plus Nanda Kumar D
 protected super-admin. The production super-admin email is set directly in D1, not published
 in source. Other volunteers need their email added by an administrator before signing in.
 
-## Sign-in setup (free services)
+## Sign-in setup
+
+### Firebase phone sign-in (US only)
+
+Phone authentication uses Firebase only for SMS verification. D1 remains the source of
+volunteer identity, roles and application sessions; R2 remains photo storage. Numbers
+are private to administrators. Enter a number on the person's volunteer form before
+they sign in. Unlisted and inactive volunteers cannot obtain an application session.
+
+Setup:
+
+1. Add Firebase to the existing Google Cloud project `temple-services-513414`, if it
+   is not already enabled, and register a web app. No Firebase Hosting is needed.
+2. Enable billing (Blaze), then Authentication > Sign-in method > Phone.
+3. Add `templeservices.pages.dev` to Authentication's authorized domains.
+4. Set Authentication's SMS region policy to **Allow only United States**. Do not
+   rely on the +1 prefix alone, which is shared by other countries.
+5. Copy the web app's public configuration into Cloudflare Pages production variable
+   `FIREBASE_WEB_CONFIG` as a JSON string containing `apiKey`, `authDomain`,
+   `projectId`, and `appId`. Never put a service-account private key in this value.
+6. For a fresh database, apply migrations in order. Migration `0004_phone_sign_in.sql`
+   was applied to production D1 on November 1, 2026; do not reapply it there.
+7. Redeploy Pages and add each approved person's US phone number through the admin
+   volunteer form. Check first with a Firebase fictional test number, then a consenting
+   volunteer's real mobile number. Monitor SMS usage and configure billing alerts.
+
+Until valid configuration exists, SMS sign-in is hidden and Google/email continue.
+Firebase uses reCAPTCHA, a resend cooldown and provider quotas; the server also limits
+token exchange attempts, validates signed tokens and recent phone authentication,
+and refuses inactive or unlisted numbers. Firebase tokens stay in memory; application
+access uses the existing HttpOnly cookie. Changing a phone number revokes old local
+sessions. Do not enable Firebase's testing bypass in production.
 
 The sign-in code supports Google Identity Services directly and email codes using Resend's
 free plan. D1 and R2 remain the data stores; no paid identity service or SMS is required.

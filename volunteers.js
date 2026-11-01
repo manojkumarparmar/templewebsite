@@ -12,6 +12,10 @@ async function openSignIn() {
   var status = document.getElementById('auth-status'); status.textContent = 'Loading sign-in options…';
   try {
     loginConfig = await api('auth/config');
+    document.getElementById('phone-sign-in').hidden = !loginConfig.firebase;
+    document.getElementById('phone-start').hidden = false;
+    document.getElementById('phone-verify').hidden = true;
+    phoneConfirmation = null; resetPhoneChallenge();
     document.getElementById('email-start').hidden = !loginConfig.emailEnabled;
     document.getElementById('email-verify').hidden = true;
     var googleBox = document.getElementById('google-sign-in'); googleBox.textContent = '';
@@ -28,7 +32,7 @@ async function openSignIn() {
       } });
       google.accounts.id.renderButton(googleBox, { theme: 'outline', size: 'large', text: 'continue_with' });
     }
-    status.textContent = loginConfig.googleClientId || loginConfig.emailEnabled ? '' : 'Volunteer sign-in is not available yet. Please contact the coordinator.';
+    status.textContent = loginConfig.googleClientId || loginConfig.emailEnabled || loginConfig.firebase ? '' : 'Volunteer sign-in is not available yet. Please contact the coordinator.';
   } catch (error) { status.textContent = error.message; }
 }
 function updateAccount() {
@@ -100,6 +104,7 @@ function renderVolunteers() {
     availability.appendChild(el('div', 'label', 'Availability'));
     availability.appendChild(el('p', 'note', volunteer.availabilityNotes || 'No availability notes added.'));
     if (managesVolunteers() && volunteer.email) identity.appendChild(el('p', 'note', volunteer.email));
+    if (managesVolunteers() && volunteer.phone) identity.appendChild(el('p', 'note', volunteer.phone));
     var canEdit = managesVolunteers() && (!volunteer.isSuperAdmin || currentUser.isSuperAdmin);
     if (volunteer.isSuperAdmin) card.appendChild(el('p', 'volunteer-protected', 'Protected super-admin · role cannot be removed.'));
     if (canEdit) {
@@ -117,7 +122,7 @@ function volunteerForm(volunteer, close) {
   var original = volunteer || { name: '', email: '', availabilityNotes: '', roles: ['volunteer'], assignments: [], active: true };
   var form = el('form', 'form');
   form.appendChild(el('h3', null, volunteer ? 'Edit ' + original.name : 'Add a volunteer'));
-  form.appendChild(el('p', 'note', 'Enter the display name, including Mtj or Pr where appropriate. A sign-in email is optional for volunteers and required for administrators.'));
+  form.appendChild(el('p', 'note', 'Enter the display name, including Mtj or Pr where appropriate. Add an email or US mobile number for sign-in. Administrators need at least one enabled sign-in method.'));
   function inputField(title, type, value, max) {
     var label = el('label', 'field', title); var input = el(type === 'textarea' ? 'textarea' : 'input');
     if (type !== 'textarea') input.type = type; else input.rows = 3;
@@ -125,6 +130,7 @@ function volunteerForm(volunteer, close) {
   }
   var name = inputField('Name', 'text', original.name, 60); name.required = true;
   var email = inputField('Sign-in email (visible only to administrators)', 'email', original.email || '', 254);
+  var phone = inputField('US mobile number (visible only to administrators)', 'tel', original.phone || '', 30);
   var availability = inputField('Availability notes (visible to everyone)', 'textarea', original.availabilityNotes, 1000);
   var roles = el('fieldset'); roles.appendChild(el('legend', null, 'Roles')); var roleBox = el('div', 'role-choices'); roles.appendChild(roleBox); form.appendChild(roles);
   var roleInputs = {};
@@ -167,7 +173,7 @@ function volunteerForm(volunteer, close) {
   }
   form.addEventListener('submit', function (event) {
     event.preventDefault(); if (save.disabled) return;
-    var data = { name: name.value.trim(), email: email.value.trim(), availabilityNotes: availability.value.trim(), active: active.checked, roles: Object.keys(roleInputs).filter(function (role) { return roleInputs[role].checked; }), assignments: assignmentInputs.filter(function (a) { return a.input.checked; }).map(function (a) { return { weekday: a.weekday, shift: a.shift }; }) };
+    var data = { name: name.value.trim(), email: email.value.trim(), phone: phone.value.trim(), availabilityNotes: availability.value.trim(), active: active.checked, roles: Object.keys(roleInputs).filter(function (role) { return roleInputs[role].checked; }), assignments: assignmentInputs.filter(function (a) { return a.input.checked; }).map(function (a) { return { weekday: a.weekday, shift: a.shift }; }) };
     if (original.id) { data.id = original.id; data.version = original.version; }
     return persist('volunteers/save', data);
   });
@@ -175,6 +181,7 @@ function volunteerForm(volunteer, close) {
   return form;
 }
 async function initPeople() {
+  initPhoneSignIn();
   ['volunteer-search', 'volunteer-role', 'volunteer-day', 'volunteer-sort'].forEach(function (id) {
     document.getElementById(id).addEventListener(id === 'volunteer-search' ? 'input' : 'change', renderVolunteers);
   });

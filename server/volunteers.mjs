@@ -1,3 +1,4 @@
+import {firebaseConfig, normalizePhone, verifyFirebasePhone} from './firebase.mjs';
 export class AuthError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -13,7 +14,7 @@ const cleanEmail = value => typeof value === 'string' ? value.trim().toLowerCase
 const validEmail = value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254;
 function field(value, length, required = false) { fail(typeof value !== 'string' || value.length > length || (required && !value.trim()), 400, 'Please complete the fields within their length limits.'); return value.trim(); }
 export function profile(row, privateFields = false) {
-  return { id: row.id, name: row.name, roles: JSON.parse(row.roles_json), assignments: JSON.parse(row.assignments_json), availabilityNotes: row.availability_notes, isSuperAdmin: !!row.is_super_admin, active: !!row.active, version: row.version, ...(privateFields ? { email: row.email || '' } : {}) };
+  return { id: row.id, name: row.name, roles: JSON.parse(row.roles_json), assignments: JSON.parse(row.assignments_json), availabilityNotes: row.availability_notes, isSuperAdmin: !!row.is_super_admin, active: !!row.active, version: row.version, ...(privateFields ? { email: row.email || '', phone: row.phone || '' } : {}) };
 }
 export const isSuper = user => !!user?.isSuperAdmin;
 export const isAdmin = user => !!user && (isSuper(user) || user.roles.includes('admin'));
@@ -96,18 +97,22 @@ async function saveVolunteer(data, user, env) {
   fail(current?.is_super_admin && (!data.roles.includes('super-admin') || data.active !== true), 403, 'The super-admin must retain the super-admin role and stay active.');
   fail(current?.id === user.id && !isSuper(user) && user.roles.includes('admin') && (!data.roles.includes('admin') || data.active !== true), 403, 'You cannot remove your own admin privilege or deactivate your account.');
   const name = field(data.name, 60, true), email = cleanEmail(data.email), availability = field(data.availabilityNotes, 1000);
+  const phone = data.phone === undefined ? current?.phone || '' : normalizePhone(data.phone);
+  fail(data.phone !== undefined && data.phone !== '' && !phone, 400, 'Enter a valid US phone number, including area code.');
   fail(email && !validEmail(email), 400, 'Enter a valid email address.');
-  fail((data.roles.includes('admin') || current?.is_super_admin) && !email, 400, 'Administrators need a sign-in email.');
+  fail((data.roles.includes('admin') || current?.is_super_admin) && !email && !(phone && firebaseConfig(env)), 400, 'Administrators need a sign-in email or a configured phone sign-in number.');
   fail(typeof data.active !== 'boolean' || !Array.isArray(data.assignments) || data.assignments.length > 14, 400, 'Invalid recurring assignments.');
   const assignments = data.assignments.map(a => { fail(!Number.isInteger(a.weekday) || a.weekday < 0 || a.weekday > 6 || !['am', 'pm'].includes(a.shift), 400, 'Invalid recurring assignment.'); return { weekday: a.weekday, shift: a.shift }; });
   fail(new Set(assignments.map(a => a.weekday + ':' + a.shift)).size !== assignments.length, 400, 'Do not repeat the same assignment.');
   const emailOwner = email ? await env.DB.prepare('SELECT id FROM volunteers WHERE email=?').bind(email).first() : null;
   fail(emailOwner && emailOwner.id !== current?.id, 409, 'This email belongs to another volunteer.');
+  const phoneOwner = phone ? await env.DB.prepare('SELECT id FROM volunteers WHERE phone=?').bind(phone).first() : null;
+  fail(phoneOwner && phoneOwner.id !== current?.id, 409, 'This phone number belongs to another volunteer.');
   const id = current?.id || crypto.randomUUID();
   if (current) {
     fail(!Number.isInteger(data.version) || current.version !== data.version, 409, 'This volunteer was updated elsewhere. Reload the directory before editing again.');
-    const update = env.DB.prepare('UPDATE volunteers SET name=?,email=?,availability_notes=?,assignments_json=?,roles_json=?,active=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(name, email || null, availability, JSON.stringify(assignments), JSON.stringify(data.roles), data.active ? 1 : 0, new Date().toISOString(), id, data.version);
-    const revoke = email !== (current.email || '') || !data.active;
+    const update = env.DB.prepare('UPDATE volunteers SET name=?,email=?,phone=?,availability_notes=?,assignments_json=?,roles_json=?,active=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(name, email || null, phone || null, availability, JSON.stringify(assignments), JSON.stringify(data.roles), data.active ? 1 : 0, new Date().toISOString(), id, data.version);
+    const revoke = email !== (current.email || '') || phone !== (current.phone || '') || !data.active;
     const statements = revoke ? [
       env.DB.prepare('DELETE FROM auth_sessions WHERE volunteer_id=? AND EXISTS(SELECT 1 FROM volunteers WHERE id=? AND version=?)').bind(id, id, data.version),
       env.DB.prepare('DELETE FROM auth_identities WHERE volunteer_id=? AND EXISTS(SELECT 1 FROM volunteers WHERE id=? AND version=?)').bind(id, id, data.version),
@@ -117,7 +122,7 @@ async function saveVolunteer(data, user, env) {
     const results = await env.DB.batch(statements);
     fail(results[results.length - 1].meta.changes !== 1, 409, 'This volunteer was updated elsewhere. Reload and try again.');
   } else {
-    await env.DB.prepare('INSERT INTO volunteers(id,name,email,availability_notes,assignments_json,roles_json,active) VALUES(?,?,?,?,?,?,?)').bind(id, name, email || null, availability, JSON.stringify(assignments), JSON.stringify(data.roles), data.active ? 1 : 0).run();
+    await env.DB.prepare('INSERT INTO volunteers(id,name,email,phone,availability_notes,assignments_json,roles_json,active) VALUES(?,?,?,?,?,?,?,?)').bind(id, name, email || null, phone || null, availability, JSON.stringify(assignments), JSON.stringify(data.roles), data.active ? 1 : 0).run();
   }
   return reply({ saved: true, id });
 }
@@ -126,7 +131,7 @@ export async function handlePeople(request, env, url, data, user) {
   if (request.method === 'GET' && path === '/api/auth/me') return reply({ user });
   if (request.method === 'GET' && path === '/api/auth/config') {
     const nonce = token();
-    return reply({ googleClientId: env.GOOGLE_CLIENT_ID || null, emailEnabled: !!(env.RESEND_API_KEY && env.EMAIL_FROM), nonce }, cookie('tls_google_nonce', nonce, 600));
+    return reply({ googleClientId: env.GOOGLE_CLIENT_ID || null, emailEnabled: !!(env.RESEND_API_KEY && env.EMAIL_FROM), firebase: firebaseConfig(env), nonce }, cookie('tls_google_nonce', nonce, 600));
   }
   if (request.method === 'GET' && path === '/api/volunteers') {
     const rows = await env.DB.prepare('SELECT * FROM volunteers ORDER BY is_super_admin DESC, name COLLATE NOCASE').all();
@@ -136,6 +141,16 @@ export async function handlePeople(request, env, url, data, user) {
   if (path.startsWith('/api/auth/')) fail(JSON.stringify(data).length > 16000, 413, 'Sign-in request too large.');
   if (path === '/api/auth/email/start') return sendCode(data, request, env);
   if (path === '/api/auth/email/verify') return checkCode(data, request, env);
+  if (path === '/api/auth/phone') {
+    const config = firebaseConfig(env); fail(!config, 503, 'Phone sign-in is not configured yet.');
+    await limitAuth(request, env);
+    let claims;
+    try { claims = await verifyFirebasePhone(data.idToken, config.projectId); }
+    catch { throw new AuthError(401, 'Phone sign-in could not be verified. Please request a new code.'); }
+    const row = await env.DB.prepare('SELECT * FROM volunteers WHERE phone=? AND active=1').bind(claims.phone_number).first();
+    fail(!row, 403, 'Please ask an administrator to add your phone number to your volunteer record.');
+    return startSession(row, env);
+  }
   if (path === '/api/auth/google') {
     fail(!env.GOOGLE_CLIENT_ID, 503, 'Google sign-in is temporarily unavailable.');
     await limitAuth(request, env);

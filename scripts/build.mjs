@@ -4,6 +4,7 @@ const dist = new URL('dist/', root);
 await mkdir(dist, { recursive: true });
 await copyFile(new URL('index.html', root), new URL('index.html', dist));
 await copyFile(new URL('volunteers.js', root), new URL('volunteers.js', dist));
+await copyFile(new URL('phone-auth.js', root), new URL('phone-auth.js', dist));
 await copyFile(new URL('privacy.html', root), new URL('privacy.html', dist));
 await writeFile(new URL('_routes.json', dist), JSON.stringify({ version: 1, include: ['/api/*'], exclude: [] }));
 console.log('Built website in dist; server code and database files are excluded.');

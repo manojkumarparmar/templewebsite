@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const peopleScript = await readFile(new URL('../volunteers.js', import.meta.url), 'utf8');
+const phoneScript = await readFile(new URL('../phone-auth.js', import.meta.url), 'utf8');
 function find(node, predicate) { return [...(predicate(node) ? [node] : []), ...(node.children || []).flatMap(child => find(child, predicate))]; }
 class Element {
   constructor(tag) { this.tag = tag; this.children = []; this.attrs = {}; this.events = {}; this.value = ''; this.style = {}; this.checked = false; this.hidden = false; }
@@ -52,6 +53,7 @@ async function fixture() {
       return Response.json({ saved: true });
     }
   });
+  vm.runInContext(phoneScript, context);
   vm.runInContext(peopleScript, context);
   await vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
   return { nodes, context, setFail(value) { fail = value; }, get updates() { return updates; } };

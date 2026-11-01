@@ -262,13 +262,18 @@ dialog .auth-heading h2 { font-size: 22px; }
 
 <dialog id="auth-dialog" aria-labelledby="auth-title">
   <div class="auth-heading"><h2 id="auth-title">Volunteer sign-in</h2><button class="btn-outline" type="button" id="auth-close">Close</button></div>
-  <p class="note">Use the email on your volunteer record. Only approved volunteers can submit updates.</p>
+  <p class="note">Use the email or phone number on your volunteer record. Only approved volunteers can submit updates.</p>
   <div id="google-sign-in"></div>
   <form id="email-start" class="form" hidden><label class="field">Email<input id="auth-email" type="email" autocomplete="email" maxlength="254" required></label><button class="btn-primary" type="submit">Send email code</button></form>
   <form id="email-verify" class="form" hidden><label class="field">Six-digit code<input id="auth-code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label><button class="btn-primary" type="submit">Verify and sign in</button><button class="btn-outline" id="change-email" type="button">Use another email</button></form>
+  <section id="phone-sign-in" hidden aria-label="Phone sign-in">
+    <form id="phone-start" class="form"><label class="field">US mobile number<input id="auth-phone" type="tel" autocomplete="tel" placeholder="(214) 555-0123" maxlength="30" required></label><p class="note">By choosing Send text code, you agree to receive a sign-in text. Message and data rates may apply. Google processes your phone number for verification and abuse prevention. See our privacy information below.</p><div id="phone-recaptcha"></div><button class="btn-primary" type="submit">Send text code</button></form>
+    <form id="phone-verify" class="form" hidden><label class="field">Six-digit text code<input id="phone-code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label><button class="btn-primary" type="submit">Verify phone and sign in</button><button class="btn-outline" id="change-phone" type="button">Use another number or resend</button></form>
+  </section>
   <p class="note" id="auth-status" role="status"></p>
   <p class="note"><a href="/privacy.html" target="_blank" rel="noopener">Privacy information</a></p>
 </dialog>
+<script src="phone-auth.js"></script>
 <script src="volunteers.js"></script>
 <script>
 /* ==========================================================================
