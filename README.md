@@ -30,7 +30,7 @@ Each date uses the recurring weekly plan, so the schedule updates on its own.
 
 ## Load updates and notes
 
-Each morning and evening shift has an **Add Notes** button. The form tracks Kitchen, Pujari,
+Yesterday and today have an **Add Notes** button beside each shift. Future shifts do not. The form tracks Kitchen, Pujari,
 and Deity loads with independent Washed, Dried, and Folded checkboxes, optional notes, and
 multiple photos. Check only the tasks completed in this update; unchecked means not reported.
 A checklist-only, notes-only, or photos-only update can be submitted. Saved updates appear
@@ -39,6 +39,16 @@ inside the shift with the volunteer name, time, load checklist summary, notes, a
 Updates are saved in the browser on this device. Other volunteers cannot see them yet, and
 clearing browser data removes them. Photos are resized to 800 pixels. If saving fails, the
 form keeps the draft and attachments. Previous notes remain visible on their scheduled day.
+
+## Backup requests
+
+Today and future shifts offer **Need backup**, collecting the unavailable person's name and
+optional notes. The shift is highlighted until someone uses **Opt for backup** and submits
+their name. The backup volunteer then replaces the scheduled name, with a backup label and
+the original assignment retained in the explanation. A confirmed backup can use **Need backup**
+again; the form starts with their name and reopens the shift for another volunteer. Prior
+backup assignments are retained in device storage. Requests and offers are saved on this
+device only; they are not shared with other volunteers yet.
 
 ## Publishing on Cloudflare Pages
 

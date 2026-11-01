@@ -95,7 +95,7 @@ h2, h3 { margin: 0; }
 .day-name { font-family: var(--font-display); font-weight: 700; font-size: 20px; }
 .day-date { font-size: 14px; color: var(--muted); }
 .pill { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; background: var(--accent); color: var(--on-accent); border-radius: 999px; padding: 2px 9px; align-self: center; }
-.shift { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; min-width: 0; }
+.shift { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; min-width: 0; }
 .shift + .shift { border-top: 1px solid var(--line); padding-top: 12px; }
 .shift .label { color: var(--muted); font-size: 11px; }
 .who { font-weight: 600; overflow-wrap: anywhere; }
@@ -121,7 +121,18 @@ h2, h3 { margin: 0; }
 .instr-body p { margin: 0 0 8px; overflow-wrap: anywhere; }
 
 .form { display: flex; flex-direction: column; gap: 12px; }
-.load-notes { width: 100%; display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.load-notes { width: 100%; display: flex; flex-direction: column; gap: 12px; }
+.load-notes:empty, .backup-form-area:empty { display: none; }
+.shift-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; width: 100%; }
+.shift-details { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.shift-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; flex: 0 0 auto; max-width: 52%; }
+.shift-actions .btn-small { padding: 0 10px; font-size: 13px; }
+.shift.backup-needed { background: var(--warn-bg); border-radius: 10px; padding: 12px; outline: 1px solid var(--warn-line); }
+.backup-needed .who { text-decoration: line-through; }
+.backup-form-area { width: 100%; }
+.backup-message { color: var(--warn-fg); font-size: 13px; overflow-wrap: anywhere; }
+.backup-confirmed { color: var(--cover-fg); font-size: 13px; }
+
 .load-form { padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
 .load-form p { margin: 0; }
 .load-checks { margin: 0; padding: 8px; border: 1px solid var(--line); border-radius: 10px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; min-width: 0; }
@@ -259,6 +270,7 @@ var MOON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 
 
 /* Updates are saved on this device. Legacy notes remain readable. */
 var LS_LOADS = "tls.loads.v1";
+var LS_BACKUPS = "tls.backups.v1";
 var LS_NOTES = "tls.notes.v1";
 var LS_NAME = "tls.name";
 function lsGet(key, fallback) {
@@ -355,9 +367,7 @@ function render() {
     if (dIso === todayIso) head.appendChild(el("span", "pill", "Today"));
     li.appendChild(head);
     ["am", "pm"].forEach(function (shiftKey) {
-      var shift = renderShift(dIso, shiftKey, plan[shiftKey]);
-      shift.appendChild(renderLoadNotes(dIso, shiftKey));
-      li.appendChild(shift);
+      li.appendChild(renderScheduledShift(dIso, shiftKey, plan[shiftKey], todayIso));
     });
     var legacy = lsGet(LS_NOTES, []).filter(function (n) { return n.date === dIso; });
     if (legacy.length) {
@@ -385,6 +395,77 @@ function renderInstructions() {
     d.appendChild(body);
     box.appendChild(d);
   });
+}
+
+/* ---- Shift backup requests ---- */
+function renderScheduledShift(dateIso, shiftKey, people, todayIso) {
+  var shift = el("div", "shift");
+  var header = el("div", "shift-header");
+  var details = el("div", "shift-details");
+  details.setAttribute("aria-live", "polite");
+  var actions = el("div", "shift-actions");
+  var backupAction = el("div");
+  header.appendChild(details); header.appendChild(actions); shift.appendChild(header);
+  var updates = renderLoadNotes(dateIso, shiftKey, actions, dateIso <= todayIso);
+  actions.appendChild(backupAction);
+  var formArea = el("div", "backup-form-area"); shift.appendChild(formArea); shift.appendChild(updates);
+  var key = dateIso + ":" + shiftKey;
+  function refresh() {
+    var request = lsGet(LS_BACKUPS, {})[key];
+    var pending = request && !request.cover;
+    shift.className = "shift" + (pending ? " backup-needed" : "");
+    details.textContent = ""; backupAction.textContent = ""; formArea.textContent = "";
+    var displayedPeople = request && request.cover ? [request.cover] : (request && request.wasBackup ? [request.person] : people);
+    var schedule = renderShift(dateIso, shiftKey, displayedPeople);
+    schedule.className = "shift-details";
+    details.appendChild(schedule);
+    if (request) {
+      if (request.cover) {
+        details.appendChild(el("span", "chip cover", "Backup volunteer"));
+        details.appendChild(el("div", "note", "Covering for " + request.person + ". Originally scheduled: " + (people.join(" & ") || "Unassigned") + "."));
+      } else {
+        details.appendChild(el("span", "chip need", "Needs backup"));
+        details.appendChild(el("div", "backup-message", request.person + (request.wasBackup ? " (backup volunteer) is unavailable. Another backup is needed." : " is unavailable. A backup volunteer is needed.")));
+      }
+      if (request.notes) details.appendChild(el("div", "note", request.notes));
+    }
+    if (dateIso < todayIso) return;
+    var button = el("button", "btn-small", pending ? "Opt for backup" : "Need backup"); button.type = "button";
+    button.setAttribute("aria-expanded", "false");
+    var formId = "backup-" + key.replace(":", "-"); button.setAttribute("aria-controls", formId);
+    backupAction.appendChild(button);
+    var form = el("form", "form load-form"); form.id = formId; form.hidden = true;
+    form.appendChild(el("strong", null, pending ? "Volunteer as backup" : "Request a backup"));
+    var label = el("label", "field", pending ? "Backup volunteer's name" : "Name of person who is unavailable");
+    var name = el("input"); name.type = "text"; name.maxLength = 60; name.required = true;
+    name.value = pending ? lsGet(LS_NAME, "") : (request && request.cover ? request.cover : (people.length === 1 ? people[0] : ""));
+    label.appendChild(name); form.appendChild(label);
+    var notes = el("textarea"); notes.rows = 3; notes.maxLength = 1000;
+    if (!pending) { var notesLabel = el("label", "field", "Notes (optional)"); notesLabel.appendChild(notes); form.appendChild(notesLabel); }
+    form.appendChild(el("p", "note", "Saved on this device only. Other volunteers cannot see this request or offer yet."));
+    var row = el("div", "photo-row");
+    var submit = el("button", "btn-primary", pending ? "Confirm backup" : "Submit request"); submit.type = "submit";
+    var cancel = el("button", "btn-outline", "Cancel"); cancel.type = "button";
+    row.appendChild(submit); row.appendChild(cancel); form.appendChild(row);
+    var status = el("div", "note"); status.setAttribute("role", "status"); form.appendChild(status); formArea.appendChild(form);
+    button.addEventListener("click", function () { form.hidden = !form.hidden; button.setAttribute("aria-expanded", String(!form.hidden)); if (!form.hidden) name.focus(); });
+    cancel.addEventListener("click", function () { form.hidden = true; button.setAttribute("aria-expanded", "false"); button.focus(); });
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      if (!name.value.trim()) { status.textContent = "Please enter a name."; name.focus(); return; }
+      var all = lsGet(LS_BACKUPS, {});
+      var current = all[key];
+      if (pending && (!current || current.cover)) { status.textContent = "This backup request has changed. Refresh the page to see its latest status."; return; }
+      all[key] = pending ? Object.assign({}, current, {cover: name.value.trim(), coveredAt: new Date().toISOString()}) : {person: name.value.trim(), notes: notes.value.trim(), requestedAt: new Date().toISOString(), wasBackup: !!(current && current.cover), history: current ? (current.history || []).concat([current.cover ? {person: current.person, notes: current.notes, cover: current.cover, requestedAt: current.requestedAt, coveredAt: current.coveredAt} : {person: current.person, notes: current.notes, requestedAt: current.requestedAt}]) : []};
+      if (!lsSet(LS_BACKUPS, all)) { status.textContent = "Could not save on this device. Your draft is still here; try again."; return; }
+      refresh();
+      var focusTarget = backupAction.querySelector("button");
+      if (focusTarget) focusTarget.focus();
+      else { details.tabIndex = -1; details.focus(); }
+    });
+  }
+  refresh();
+  return shift;
 }
 
 /* ---- Load updates ---- */
@@ -417,7 +498,7 @@ function renderUpdate(entry) {
   });
   return card;
 }
-function renderLoadNotes(dateIso, shiftKey) {
+function renderLoadNotes(dateIso, shiftKey, actions, allowNotes) {
   var box = el("div", "load-notes");
   var button = el("button", "btn-small", "Add Notes");
   button.type = "button";
@@ -425,7 +506,7 @@ function renderLoadNotes(dateIso, shiftKey) {
   button.setAttribute("aria-expanded", "false");
   button.setAttribute("aria-controls", formId);
   button.setAttribute("aria-label", "Add Notes for " + dateIso + " " + (shiftKey === "am" ? "morning" : "evening"));
-  box.appendChild(button);
+  if (allowNotes) actions.appendChild(button);
   var form = el("form", "form load-form"); form.id = formId; form.hidden = true;
   var caption = el("p", "note", "Check what you completed. Unchecked items mean not reported in this update.");
   form.appendChild(caption);
