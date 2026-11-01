@@ -1,9 +1,13 @@
 # Temple Laundry Schedule
 
 A one-page, mobile-friendly website for the Sri Radha Kalachandji Temple laundry volunteers.
-Everyone can see who is on each morning and evening shift for this week and next week, with
+Everyone can see who is on each morning and evening shift for yesterday, today, and the next six days, with
 today highlighted, the permanent backups, and any planned absences. The page also has a
-service instructions section and, for today, Mark as done, notes, photos and questions.
+service instructions section and load checklists, notes, and photos within each scheduled shift.
+
+A sticky tab bar keeps Schedule and Instructions available while scrolling. Schedule opens by
+default and shows the eight-day schedule and backups. Each shift contains load updates, notes, and photos. Service instructions have
+their own tab.
 
 There is no build step. The whole site is `index.html`.
 
@@ -21,16 +25,20 @@ Open `index.html` and edit the block marked `EDIT THIS SECTION TO UPDATE THE SCH
 - `INSTRUCTIONS`: the service instructions, one entry per topic. `body` is a list of short
   paragraphs; leave it empty to show "Instructions coming soon."
 
-The page works out this week and next week from the current date, so the plan repeats on its own.
+The page shows a rolling eight-day schedule starting yesterday, based on the current date.
+Each date uses the recurring weekly plan, so the schedule updates on its own.
 
-## Mark as done, notes, photos and questions
+## Load updates and notes
 
-Volunteers can mark today's morning or evening shift as done, post a note or a question with an
-optional photo, and mark a question as answered. Photos are shrunk to 800 pixels before saving.
+Each morning and evening shift has an **Add Notes** button. The form tracks Kitchen, Pujari,
+and Deity loads with independent Washed, Dried, and Folded checkboxes, optional notes, and
+multiple photos. Check only the tasks completed in this update; unchecked means not reported.
+A checklist-only, notes-only, or photos-only update can be submitted. Saved updates appear
+inside the shift with the volunteer name, time, load checklist summary, notes, and photos.
 
-These are saved in the browser on the device being used, not on a server. Other volunteers cannot
-see them yet, and clearing the browser data removes them. Notes older than 14 days are dropped.
-Sharing them between everyone needs a small shared database (see Later phases).
+Updates are saved in the browser on this device. Other volunteers cannot see them yet, and
+clearing browser data removes them. Photos are resized to 800 pixels. If saving fails, the
+form keeps the draft and attachments. Previous notes remain visible on their scheduled day.
 
 ## Publishing on Cloudflare Pages
 
@@ -42,5 +50,5 @@ Every push to `main` redeploys the site.
 
 ## Later phases
 
-Sharing Done marks, notes, photos and questions between all volunteers, submitting planned
+Sharing load updates, notes, and photos between all volunteers, submitting planned
 absences and offering to cover shifts need a small shared database. They are not built yet.
