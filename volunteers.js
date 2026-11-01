@@ -67,7 +67,7 @@ async function refreshVolunteers() {
 }
 function renderVolunteers() {
   var list = document.getElementById('volunteer-list'); list.textContent = '';
-  document.getElementById('volunteers-status').textContent = managesVolunteers() ? 'Use Add volunteer to add a person, or Edit volunteer on a row to update their name, sign-in email, roles, availability, and recurring shifts.' : currentUser ? 'You are signed in with viewing access. Ask an administrator to add or edit volunteers.' : 'Sign in with an administrator account to add people or edit volunteer details.';
+  document.getElementById('volunteers-status').textContent = managesVolunteers() ? 'Use Add volunteer to add a person, or Edit volunteer on a row to update their name, sign-in email, roles, availability, and recurring shifts.' : currentUser ? 'You are signed in with viewing access. Ask an administrator to add or edit volunteers.' : '';
   var search = document.getElementById('volunteer-search').value.trim().toLowerCase();
   var role = document.getElementById('volunteer-role').value;
   var day = document.getElementById('volunteer-day').value;
