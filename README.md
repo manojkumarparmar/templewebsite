@@ -83,8 +83,8 @@ Opening `index.html` directly previews the layout but cannot use the shared API.
 
 ## Volunteers and access
 
-In the Volunteers tab, choose **Sign in to manage volunteers** and sign in with an
-administrator account. **Add volunteer** opens a new-person form; **Edit volunteer**
+Use **Sign in** to sign in with an administrator account, then open the Volunteers tab.
+**Add volunteer** opens a new-person form; **Edit volunteer**
 on each row updates that person's name, sign-in email, roles, availability, and shifts.
 Use **Save volunteer** to persist changes to D1, or **Cancel** to discard the form.
 

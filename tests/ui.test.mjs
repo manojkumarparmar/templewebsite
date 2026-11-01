@@ -61,11 +61,11 @@ const buttons = (node, text) => find(node, n => n.tag === 'button' && n.text ===
 test('volunteer management exposes add and edit forms only to administrators', async () => {
   const {nodes, context} = await fixture();
   context.currentUser = null; context.updateAccount();
-  assert.equal(nodes['manage-volunteers'].hidden, false);
+  assert.equal(nodes['sign-in'].hidden, false);
   assert.equal(nodes['add-volunteer'].hidden, true);
   context.currentUser = {id:'admin',roles:['admin'],name:'Admin'};
   context.updateAccount(); context.renderVolunteers();
-  assert.equal(nodes['manage-volunteers'].hidden, true);
+  assert.equal(nodes['sign-in'].hidden, true);
   assert.equal(nodes['add-volunteer'].hidden, false);
   nodes['add-volunteer'].events.click();
   assert.equal(nodes['new-volunteer'].hidden, false);

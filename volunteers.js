@@ -36,7 +36,6 @@ function updateAccount() {
   document.getElementById('sign-in').hidden = !!currentUser;
   document.getElementById('sign-out').hidden = !currentUser;
   document.getElementById('add-volunteer').hidden = !managesVolunteers();
-  document.getElementById('manage-volunteers').hidden = !!currentUser;
   if (!managesVolunteers()) closeNewVolunteer();
 }
 function closeNewVolunteer() {
@@ -180,7 +179,6 @@ async function initPeople() {
     document.getElementById(id).addEventListener(id === 'volunteer-search' ? 'input' : 'change', renderVolunteers);
   });
   document.getElementById('sign-in').addEventListener('click', openSignIn);
-  document.getElementById('manage-volunteers').addEventListener('click', openSignIn);
   document.getElementById('auth-close').addEventListener('click', function () { document.getElementById('auth-dialog').close(); });
   document.getElementById('sign-out').addEventListener('click', async function () {
     try { await api('auth/logout', {}); currentUser = null; updateAccount(); await refreshVolunteers(); render(); }
