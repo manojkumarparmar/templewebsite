@@ -4,38 +4,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
 import { handleApi } from '../server/api.mjs';
 
-const schema = await readFile(new URL('../migrations/0001_shared_storage.sql', import.meta.url), 'utf8');
+import { fixture } from './test-fixture.mjs';
 const serviceDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const dayAfter = offset => new Date(Date.parse(serviceDay + 'T12:00:00Z') + offset * 86400000).toISOString().slice(0, 10);
-function fixture() {
-  const db = new DatabaseSync(':memory:'); db.exec('PRAGMA foreign_keys = ON'); db.exec(schema);
-  const objects = new Map();
-  const env = {
-    DB: {
-      prepare(sql) {
-        let args = [];
-        return {
-          bind(...values) { args = values; return this; },
-          async first() { return db.prepare(sql).get(...args) || null; },
-          async all() { return { results: db.prepare(sql).all(...args) }; },
-          async run() { const result = db.prepare(sql).run(...args); return { meta: { changes: result.changes } }; }
-        };
-      },
-      async batch(statements) {
-        db.exec('BEGIN');
-        try { const results = []; for (const statement of statements) results.push(await statement.run()); db.exec('COMMIT'); return results; }
-        catch (error) { db.exec('ROLLBACK'); throw error; }
-      }
-    },
-    PHOTOS: {
-      async put(key, bytes) { objects.set(key, bytes); },
-      async get(key) { return objects.has(key) ? { body: objects.get(key) } : null; },
-      async delete(key) { objects.delete(key); }
-    }
-  };
-  const call = (path, data, origin = 'https://templeservices.pages.dev') => handleApi(new Request('https://templeservices.pages.dev/api/' + path, data ? { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify(data) } : {}), env);
-  return { db, env, call, objects };
-}
 function update() {
   return { id: crypto.randomUUID(), date: serviceDay, shift: 'am', who: 'Test Volunteer', text: 'Ready for the next shift', loads: Object.fromEntries(['kitchen', 'pujari', 'deity'].map(load => [load, { washed: true, dried: false, folded: false }])), photos: [] };
 }
@@ -46,7 +17,7 @@ test('checklists, photos, and notes persist and can be read by a second visitor'
   assert.equal(objects.size, 1);
   const schedule = await (await call(`schedule?from=${dayAfter(-1)}&to=${dayAfter(6)}`)).json();
   assert.equal(schedule.updates.length, 1); assert.equal(schedule.updates[0].loads.kitchen.washed, true);
-  assert.equal(schedule.updates[0].who, 'Test Volunteer');
+  assert.equal(schedule.updates[0].who, 'Nanda Kumar Das');
   const photo = await call(schedule.updates[0].photos[0].slice('/api/'.length));
   assert.equal(photo.status, 200); assert.equal(photo.headers.get('Content-Type'), 'image/jpeg');
   assert.equal((await photo.arrayBuffer()).byteLength, 4);
@@ -73,7 +44,7 @@ test('validation rejects future notes, old backup requests, bad images, and cros
   assert.equal((await call('updates', { ...update(), date: dayAfter(-2) })).status, 400);
   assert.equal((await call('updates', { ...update(), photos: ['data:image/jpeg;base64,SGVsbG8='] })).status, 400);
   assert.equal((await call('updates', { ...update(), photos: Array(5).fill('data:image/jpeg;base64,/9j/2Q==') })).status, 400);
-  assert.equal((await call('updates', { ...update(), who: '' })).status, 400);
+  assert.equal((await call('updates', { ...update(), who: '' })).status, 201); // The authenticated name overrides submitted names.
   assert.equal((await call('updates', update(), 'https://unrelated.example')).status, 403);
   assert.equal((await call('backups', { date: dayAfter(-1), shift: 'am', action: 'request', name: 'Test', version: 0 })).status, 400);
   assert.equal((await call('schedule?from=2026-02-30&to=2026-03-01')).status, 400);

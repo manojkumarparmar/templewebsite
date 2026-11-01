@@ -1,0 +1,176 @@
+var currentUser = null, volunteerDirectory = [], loginConfig = null;
+var ROLE_OPTIONS = ['super-admin', 'admin', 'headpujari', 'coordinator', 'volunteer', 'backup', 'other'];
+var WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+function managesVolunteers() { return !!currentUser && (currentUser.isSuperAdmin || currentUser.roles.indexOf('admin') >= 0); }
+function requireSignIn() {
+  if (currentUser) return true;
+  openSignIn(); return false;
+}
+async function openSignIn() {
+  var dialog = document.getElementById('auth-dialog');
+  if (!dialog.open) dialog.showModal();
+  var status = document.getElementById('auth-status'); status.textContent = 'Loading sign-in options…';
+  try {
+    loginConfig = await api('auth/config');
+    document.getElementById('email-start').hidden = !loginConfig.emailEnabled;
+    document.getElementById('email-verify').hidden = true;
+    var googleBox = document.getElementById('google-sign-in'); googleBox.textContent = '';
+    if (loginConfig.googleClientId) {
+      if (!window.google || !window.google.accounts) {
+        await new Promise(function (resolve, reject) {
+          var script = document.createElement('script'); script.src = 'https://accounts.google.com/gsi/client'; script.async = true; script.onload = resolve; script.onerror = reject; document.head.appendChild(script);
+        });
+      }
+      google.accounts.id.initialize({ client_id: loginConfig.googleClientId, nonce: loginConfig.nonce, callback: async function (response) {
+        status.textContent = 'Signing in…';
+        try { var result = await api('auth/google', { credential: response.credential }); await signedIn(result.user); }
+        catch (error) { status.textContent = error.message; }
+      } });
+      google.accounts.id.renderButton(googleBox, { theme: 'outline', size: 'large', text: 'continue_with' });
+    }
+    status.textContent = loginConfig.googleClientId || loginConfig.emailEnabled ? '' : 'Volunteer sign-in is not available yet. Please contact the coordinator.';
+  } catch (error) { status.textContent = error.message; }
+}
+function updateAccount() {
+  document.getElementById('account-label').textContent = currentUser ? 'Signed in as ' + currentUser.name : 'View the schedule without signing in.';
+  document.getElementById('sign-in').hidden = !!currentUser;
+  document.getElementById('sign-out').hidden = !currentUser;
+  document.getElementById('add-volunteer').hidden = !managesVolunteers();
+}
+async function signedIn(user) {
+  currentUser = user; updateAccount();
+  document.getElementById('auth-dialog').close();
+  document.getElementById('auth-code').value = '';
+  await refreshVolunteers(); render(); await syncShared(true);
+}
+function applyVolunteerSchedule() {
+  WEEKLY_PLAN = WEEKDAYS.map(function (day, weekday) {
+    var plan = { day: day, am: [], pm: [] };
+    volunteerDirectory.filter(function (v) { return v.active; }).forEach(function (v) {
+      v.assignments.filter(function (a) { return a.weekday === weekday; }).forEach(function (a) { plan[a.shift].push(v.name); });
+    });
+    return plan;
+  });
+  var backups = volunteerDirectory.filter(function (v) { return v.active && v.roles.indexOf('backup') >= 0; });
+  var box = document.getElementById('backup-list'); box.textContent = '';
+  if (!backups.length) box.appendChild(el('p', 'note', 'No permanent backups listed yet.'));
+  backups.forEach(function (v) { box.appendChild(el('div', 'backup', v.name)); });
+}
+async function refreshVolunteers() {
+  var data = await api('volunteers'); volunteerDirectory = data.volunteers;
+  applyVolunteerSchedule(); renderVolunteers();
+}
+function renderVolunteers() {
+  var list = document.getElementById('volunteer-list'); list.textContent = '';
+  document.getElementById('volunteers-status').textContent = managesVolunteers() ? 'You can manage volunteer records and roles. Sign-in emails are visible only to administrators.' : 'Only administrators can edit volunteer records.';
+  volunteerDirectory.forEach(function (volunteer) {
+    var card = el('article', 'volunteer-card' + (volunteer.active ? '' : ' inactive-volunteer'));
+    card.appendChild(el('h3', null, volunteer.name));
+    var roles = el('div', 'volunteer-roles');
+    volunteer.roles.forEach(function (role) { roles.appendChild(el('span', 'chip note-kind', role)); });
+    if (!volunteer.active) roles.appendChild(el('span', 'chip away', 'Inactive'));
+    card.appendChild(roles);
+    var assignments = el('ul', 'assignment-list');
+    volunteer.assignments.forEach(function (assignment) { assignments.appendChild(el('li', null, WEEKDAYS[assignment.weekday] + ' · ' + (assignment.shift === 'am' ? 'Morning' : 'Evening'))); });
+    if (volunteer.assignments.length) card.appendChild(assignments);
+    else card.appendChild(el('p', 'note', 'No recurring shifts assigned.'));
+    card.appendChild(el('div', 'label', 'Availability'));
+    card.appendChild(el('p', 'note', volunteer.availabilityNotes || 'No availability notes added.'));
+    if (managesVolunteers() && volunteer.email) card.appendChild(el('p', 'note', volunteer.email));
+    var canEdit = managesVolunteers() && (!volunteer.isSuperAdmin || currentUser.isSuperAdmin);
+    if (volunteer.isSuperAdmin) card.appendChild(el('p', 'volunteer-protected', 'Protected super-admin · role cannot be removed.'));
+    if (canEdit) {
+      var button = el('button', 'btn-small', 'Edit volunteer'); button.type = 'button'; button.setAttribute('aria-expanded', 'false'); card.appendChild(button);
+      var editor = el('div', 'volunteer-editor'); editor.hidden = true; card.appendChild(editor);
+      button.addEventListener('click', function () {
+        editor.hidden = !editor.hidden; button.setAttribute('aria-expanded', String(!editor.hidden));
+        if (!editor.hidden) { editor.textContent = ''; editor.appendChild(volunteerForm(volunteer, function () { editor.hidden = true; button.setAttribute('aria-expanded', 'false'); button.focus(); })); }
+      });
+    }
+    list.appendChild(card);
+  });
+}
+function volunteerForm(volunteer, close) {
+  var original = volunteer || { name: '', email: '', availabilityNotes: '', roles: ['volunteer'], assignments: [], active: true };
+  var form = el('form', 'form');
+  function inputField(title, type, value, max) {
+    var label = el('label', 'field', title); var input = el(type === 'textarea' ? 'textarea' : 'input');
+    if (type !== 'textarea') input.type = type; else input.rows = 3;
+    input.value = value; input.maxLength = max; label.appendChild(input); form.appendChild(label); return input;
+  }
+  var name = inputField('Name', 'text', original.name, 60); name.required = true;
+  var email = inputField('Sign-in email (visible only to administrators)', 'email', original.email || '', 254);
+  var availability = inputField('Availability notes (visible to everyone)', 'textarea', original.availabilityNotes, 1000);
+  var roles = el('fieldset'); roles.appendChild(el('legend', null, 'Roles')); var roleBox = el('div', 'role-choices'); roles.appendChild(roleBox); form.appendChild(roles);
+  var roleInputs = {};
+  ROLE_OPTIONS.forEach(function (role) {
+    if (role === 'super-admin' && !original.isSuperAdmin) return;
+    var label = el('label', 'check-label'); var check = el('input'); check.type = 'checkbox'; check.checked = original.roles.indexOf(role) >= 0;
+    check.disabled = role === 'super-admin' || (role === 'admin' && original.id === currentUser.id && !currentUser.isSuperAdmin);
+    roleInputs[role] = check; label.appendChild(check); label.appendChild(document.createTextNode(role)); roleBox.appendChild(label);
+  });
+  var schedule = el('fieldset'); schedule.appendChild(el('legend', null, 'Recurring assignments')); form.appendChild(schedule);
+  var assignmentInputs = [];
+  WEEKDAYS.forEach(function (day, weekday) {
+    var row = el('div', 'assignment-row'); row.appendChild(el('span', null, day));
+    ['am', 'pm'].forEach(function (shift) {
+      var label = el('label', 'check-label'); var check = el('input'); check.type = 'checkbox'; check.checked = original.assignments.some(function (a) { return a.weekday === weekday && a.shift === shift; });
+      check.setAttribute('aria-label', day + ' ' + (shift === 'am' ? 'morning' : 'evening'));
+      assignmentInputs.push({ weekday: weekday, shift: shift, input: check }); label.appendChild(check); label.appendChild(document.createTextNode(shift === 'am' ? 'Morning' : 'Evening')); row.appendChild(label);
+    }); schedule.appendChild(row);
+  });
+  var activeLabel = el('label', 'check-label'); var active = el('input'); active.type = 'checkbox'; active.checked = original.active;
+  active.disabled = !!original.isSuperAdmin || original.id === currentUser.id; activeLabel.appendChild(active); activeLabel.appendChild(document.createTextNode('Active volunteer')); form.appendChild(activeLabel);
+  if (original.id === currentUser.id) form.appendChild(el('p', 'note', currentUser.isSuperAdmin ? 'Your super-admin role is protected.' : 'You cannot drop your own admin privilege or deactivate your account.'));
+  var row = el('div', 'editor-actions'); var save = el('button', 'btn-primary', 'Save volunteer'); save.type = 'submit'; save.style.paddingInline = '16px'; row.appendChild(save);
+  var cancel = el('button', 'btn-outline', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', close); row.appendChild(cancel);
+  var remove;
+  if (original.id && !original.isSuperAdmin && original.id !== currentUser.id && original.active) {
+    remove = el('button', 'btn-outline', 'Remove volunteer'); remove.type = 'button'; row.appendChild(remove);
+  }
+  form.appendChild(row); var status = el('div', 'note'); status.setAttribute('role', 'status'); form.appendChild(status);
+  async function persist(path, data) {
+    save.disabled = true; if (remove) remove.disabled = true; status.textContent = 'Saving…';
+    try {
+      await api(path, data);
+      currentUser = (await api('auth/me')).user; updateAccount();
+      await refreshVolunteers(); document.getElementById('new-volunteer').textContent = ''; render(); await syncShared(true);
+      document.getElementById('volunteers-status').textContent = 'Volunteer record saved.';
+    } catch (error) { status.textContent = error.message; save.disabled = false; if (remove) remove.disabled = false; }
+  }
+  form.addEventListener('submit', function (event) {
+    event.preventDefault(); if (save.disabled) return;
+    var data = { name: name.value.trim(), email: email.value.trim(), availabilityNotes: availability.value.trim(), active: active.checked, roles: Object.keys(roleInputs).filter(function (role) { return roleInputs[role].checked; }), assignments: assignmentInputs.filter(function (a) { return a.input.checked; }).map(function (a) { return { weekday: a.weekday, shift: a.shift }; }) };
+    if (original.id) { data.id = original.id; data.version = original.version; }
+    return persist('volunteers/save', data);
+  });
+  if (remove) remove.addEventListener('click', function () { persist('volunteers/remove', { id: original.id, version: original.version }); });
+  return form;
+}
+async function initPeople() {
+  document.getElementById('sign-in').addEventListener('click', openSignIn);
+  document.getElementById('auth-close').addEventListener('click', function () { document.getElementById('auth-dialog').close(); });
+  document.getElementById('sign-out').addEventListener('click', async function () {
+    try { await api('auth/logout', {}); currentUser = null; updateAccount(); await refreshVolunteers(); render(); }
+    catch (error) { document.getElementById('account-label').textContent = error.message; }
+  });
+  document.getElementById('add-volunteer').addEventListener('click', function () {
+    if (!managesVolunteers()) return;
+    var box = document.getElementById('new-volunteer'); box.textContent = ''; box.appendChild(volunteerForm(null, function () { box.textContent = ''; }));
+  });
+  document.getElementById('change-email').addEventListener('click', function () { document.getElementById('email-verify').hidden = true; document.getElementById('email-start').hidden = false; });
+  document.getElementById('email-start').addEventListener('submit', async function (event) {
+    event.preventDefault(); var button = event.target.querySelector('button'); if (button.disabled) return; button.disabled = true;
+    try { var result = await api('auth/email/start', { email: document.getElementById('auth-email').value.trim() }); document.getElementById('auth-status').textContent = result.message; document.getElementById('email-start').hidden = true; document.getElementById('email-verify').hidden = false; document.getElementById('auth-code').focus(); }
+    catch (error) { document.getElementById('auth-status').textContent = error.message; }
+    finally { button.disabled = false; }
+  });
+  document.getElementById('email-verify').addEventListener('submit', async function (event) {
+    event.preventDefault(); var button = event.target.querySelector('button'); if (button.disabled) return; button.disabled = true;
+    try { var result = await api('auth/email/verify', { email: document.getElementById('auth-email').value.trim(), code: document.getElementById('auth-code').value.trim() }); await signedIn(result.user); }
+    catch (error) { document.getElementById('auth-status').textContent = error.message; }
+    finally { button.disabled = false; }
+  });
+  try { currentUser = (await api('auth/me')).user; updateAccount(); await refreshVolunteers(); }
+  catch (error) { document.getElementById('volunteers-status').textContent = 'Could not load volunteers. Please refresh and try again.'; }
+}

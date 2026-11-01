@@ -4,15 +4,18 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+const peopleScript = await readFile(new URL('../volunteers.js', import.meta.url), 'utf8');
 function find(node, predicate) { return [...(predicate(node) ? [node] : []), ...(node.children || []).flatMap(child => find(child, predicate))]; }
 class Element {
-  constructor(tag) { this.tag = tag; this.children = []; this.attrs = {}; this.events = {}; this.value = ''; this.checked = false; this.hidden = false; }
+  constructor(tag) { this.tag = tag; this.children = []; this.attrs = {}; this.events = {}; this.value = ''; this.style = {}; this.checked = false; this.hidden = false; }
   set textContent(value) { this.text = value; this.children = []; }
   appendChild(node) { this.children.push(node); return node; }
   setAttribute(key, value) { this.attrs[key] = value; }
   getAttribute(key) { return this.attrs[key]; }
   addEventListener(key, handler) { this.events[key] = handler; }
   focus() { this.focused = true; }
+  showModal() { this.open = true; }
+  close() { this.open = false; }
   querySelector(tag) { return this.querySelectorAll(tag)[0] || null; }
   querySelectorAll(tags) { return find(this, n => tags.split(',').map(t => t.trim()).includes(n.tag)); }
 }
@@ -29,6 +32,15 @@ async function fixture() {
     localStorage: { getItem() { return null; }, setItem() {} },
     async fetch(path, options) {
       if (fail) throw new Error('Connection failed');
+      if (path === '/api/auth/me') return Response.json({user:{id:'tester',name:'Test User',roles:['volunteer'],isSuperAdmin:false}});
+      if (path === '/api/volunteers') {
+        const roster = new Map();
+        context.WEEKLY_PLAN.forEach((plan, weekday) => ['am','pm'].forEach(shift => plan[shift].forEach(name => {
+          if (!roster.has(name)) roster.set(name,{id:name,name,roles:['volunteer'],active:true,assignments:[],availabilityNotes:'',version:1});
+          roster.get(name).assignments.push({weekday,shift});
+        })));
+        return Response.json({volunteers:[...roster.values()]});
+      }
       if (!options.body) return Response.json({ updates, backups });
       const data = JSON.parse(options.body);
       if (path === '/api/updates') updates.unshift({ ...data, time: new Date().toISOString() });
@@ -40,6 +52,7 @@ async function fixture() {
       return Response.json({ saved: true });
     }
   });
+  vm.runInContext(peopleScript, context);
   await vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
   return { nodes, context, setFail(value) { fail = value; }, get updates() { return updates; } };
 }
@@ -78,4 +91,34 @@ test('backup changes use shared state while preserving laundry drafts', async ()
   assert.equal(find(noteForm, n => n.tag === 'textarea')[0].value, 'Keep my draft');
   await context.syncShared();
   assert.ok(find(shift, n => n.text === 'Replacement').length);
+});
+
+test('three tabs work, public directory has no editing controls, and signed-out actions require sign-in', async () => {
+  const { nodes, context } = await fixture();
+  nodes['volunteers-tab'].events.click();
+  assert.equal(nodes['volunteers-panel'].hidden, false);
+  assert.equal(nodes['schedule-panel'].hidden, true);
+  nodes['volunteers-tab'].events.keydown({key:'ArrowRight',preventDefault(){}});
+  assert.equal(nodes['schedule-panel'].hidden, false);
+  assert.equal(buttons(nodes['volunteer-list'], 'Edit volunteer').length, 0);
+  context.currentUser = null;
+  buttons(nodes.days.children[1], 'Add Notes')[0].events.click();
+  assert.equal(nodes['auth-dialog'].open, true);
+  const updateForm = find(nodes.days.children[1], n => n.tag === 'form' && n.id.startsWith('update-'))[0];
+  assert.equal(updateForm.hidden, true);
+});
+test('admin editor locks self-demotion and super-admin editor locks the protected role', async () => {
+  const { context } = await fixture();
+  context.currentUser = {id:'self',name:'Admin',roles:['admin'],isSuperAdmin:false};
+  const self = {id:'self',name:'Admin',email:'admin@example.com',roles:['admin','volunteer'],assignments:[],availabilityNotes:'',active:true,version:1};
+  let editor = context.volunteerForm(self, () => {});
+  let labels = find(editor, n => n.className === 'check-label');
+  const labelText = n => (n.children || []).find(c => c.text)?.text;
+  assert.equal(labels.find(n => labelText(n) === 'admin').children[0].disabled, true);
+  assert.equal(buttons(editor,'Remove volunteer').length,0);
+  context.currentUser = {id:'self',name:'Super',roles:['super-admin'],isSuperAdmin:true};
+  editor = context.volunteerForm({...self,roles:['super-admin'],isSuperAdmin:true},()=>{});
+  labels = find(editor, n => n.className === 'check-label');
+  assert.equal(labels.find(n => labelText(n) === 'super-admin').children[0].disabled,true);
+  assert.equal(buttons(editor,'Remove volunteer').length,0);
 });

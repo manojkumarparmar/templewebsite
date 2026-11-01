@@ -71,7 +71,7 @@ h2, h3 { margin: 0; }
 .head { display: flex; flex-direction: column; gap: 4px; }
 
 .day:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-.main-tabs { position: sticky; top: 0; z-index: 10; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: calc(8px + env(safe-area-inset-top, 0px)) 8px 8px; background: var(--bg); border-bottom: 1px solid var(--line); }
+.main-tabs { position: sticky; top: 0; z-index: 10; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: calc(8px + env(safe-area-inset-top, 0px)) 8px 8px; background: var(--bg); border-bottom: 1px solid var(--line); }
 .main-tab { min-height: 48px; padding: 10px 16px; border: 0; border-radius: 10px; font: inherit; font-weight: 600; color: var(--fg); background: var(--surface); cursor: pointer; }
 .main-tab[aria-selected="true"] { background: var(--accent); color: var(--on-accent); }
 .main-tab:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
@@ -173,6 +173,31 @@ h2, h3 { margin: 0; }
   .day-head, .day > .note { grid-column: 1 / -1; }
   .day > .shift + .shift { border-top: 0; padding-top: 0; border-left: 1px solid var(--line); padding-left: 20px; }
 }
+
+.account-bar, .directory-heading, .auth-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.account-bar { margin-top: 12px; color: var(--muted); font-size: 14px; }
+.account-bar #account-label { margin-right: auto; }
+.main-tab { padding-inline: 8px; }
+.volunteer-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 14px; }
+.volunteer-card { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); min-width: 0; }
+.volunteer-card h3 { font-family: var(--font-display); font-size: 22px; overflow-wrap: anywhere; }
+.volunteer-card p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.volunteer-roles, .assignment-list, .editor-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.assignment-list { list-style: none; padding: 0; margin: 0; }
+.assignment-list li { padding: 4px 8px; border-radius: 6px; background: var(--today-bg); font-size: 14px; }
+.volunteer-editor { width: 100%; border-top: 1px solid var(--line); padding-top: 14px; }
+.volunteer-editor fieldset { min-width: 0; border: 1px solid var(--line); border-radius: 10px; margin: 0; padding: 10px; }
+.volunteer-editor legend { font-weight: 600; }
+.role-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.volunteer-editor .check-label { justify-content: flex-start; }
+.assignment-row { display: grid; grid-template-columns: minmax(0, 1fr) repeat(2, minmax(0, 1fr)); gap: 4px; align-items: center; font-size: 14px; }
+.inactive-volunteer { opacity: 0.75; }
+.volunteer-protected { color: var(--muted); font-size: 13px; }
+dialog { width: min(460px, calc(100% - 32px)); max-height: calc(100dvh - 48px); overflow-y: auto; padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--fg); }
+dialog::backdrop { background: #101a35a0; }
+dialog .form, #google-sign-in { margin-top: 18px; }
+dialog .auth-heading h2 { font-size: 22px; }
+.btn-small:disabled { opacity: 0.55; cursor: default; }
 </style>
 </head>
 <body>
@@ -180,11 +205,13 @@ h2, h3 { margin: 0; }
   <header class="head">
     <div class="eyebrow">Sri Radha Kalachandji Temple</div>
     <h1>Laundry Service</h1>
+    <div class="account-bar"><span id="account-label">View the schedule without signing in.</span><button class="btn-small" type="button" id="sign-in">Sign in</button><button class="btn-small" type="button" id="sign-out" hidden>Sign out</button></div>
   </header>
 
   <nav class="main-tabs" role="tablist" aria-label="Laundry service">
     <button class="main-tab" id="schedule-tab" role="tab" type="button" aria-selected="true" aria-controls="schedule-panel" tabindex="0">Schedule</button>
     <button class="main-tab" id="instructions-tab" role="tab" type="button" aria-selected="false" aria-controls="instructions-panel" tabindex="-1">Instructions</button>
+    <button class="main-tab" id="volunteers-tab" role="tab" type="button" aria-selected="false" aria-controls="volunteers-panel" tabindex="-1">Volunteers</button>
   </nav>
 
   <div class="tab-panel" id="schedule-panel" role="tabpanel" aria-labelledby="schedule-tab">
@@ -209,8 +236,25 @@ h2, h3 { margin: 0; }
     <div class="instr-list" id="instr-list"></div>
   </section>
   </div>
+  <div class="tab-panel" id="volunteers-panel" role="tabpanel" aria-labelledby="volunteers-tab" hidden>
+    <div class="directory-heading"><div><h2>Volunteers</h2><p class="note">Recurring service assignments, availability, and roles.</p></div><button type="button" class="btn-small" id="add-volunteer" hidden>Add volunteer</button></div>
+    <p class="note" id="volunteers-status" role="status">Loading volunteers…</p>
+    <div id="new-volunteer"></div>
+    <div class="volunteer-grid" id="volunteer-list"></div>
+  </div>
+
 </div>
 
+<dialog id="auth-dialog" aria-labelledby="auth-title">
+  <div class="auth-heading"><h2 id="auth-title">Volunteer sign-in</h2><button class="btn-outline" type="button" id="auth-close">Close</button></div>
+  <p class="note">Use the email on your volunteer record. Only approved volunteers can submit updates.</p>
+  <div id="google-sign-in"></div>
+  <form id="email-start" class="form" hidden><label class="field">Email<input id="auth-email" type="email" autocomplete="email" maxlength="254" required></label><button class="btn-primary" type="submit">Send email code</button></form>
+  <form id="email-verify" class="form" hidden><label class="field">Six-digit code<input id="auth-code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label><button class="btn-primary" type="submit">Verify and sign in</button><button class="btn-outline" id="change-email" type="button">Use another email</button></form>
+  <p class="note" id="auth-status" role="status"></p>
+  <p class="note"><a href="/privacy.html" target="_blank" rel="noopener">Privacy information</a></p>
+</dialog>
+<script src="volunteers.js"></script>
 <script>
 /* ==========================================================================
    EDIT THIS SECTION TO UPDATE THE SCHEDULE
@@ -460,7 +504,7 @@ function renderScheduledShift(dateIso, shiftKey, people, todayIso) {
     form.appendChild(el("strong", null, pending ? "Volunteer as backup" : "Request a backup"));
     var label = el("label", "field", pending ? "Backup volunteer's name" : "Name of person who is unavailable");
     var name = el("input"); name.type = "text"; name.maxLength = 60; name.required = true;
-    name.value = pending ? lsGet(LS_NAME, "") : (request && request.cover ? request.cover : (people.length === 1 ? people[0] : ""));
+    name.value = pending ? (currentUser ? currentUser.name : "") : (request && request.cover ? request.cover : (people.length === 1 ? people[0] : ""));
     label.appendChild(name); form.appendChild(label);
     var notes = el("textarea"); notes.rows = 3; notes.maxLength = 1000;
     if (!pending) { var notesLabel = el("label", "field", "Notes (optional)"); notesLabel.appendChild(notes); form.appendChild(notesLabel); }
@@ -470,7 +514,7 @@ function renderScheduledShift(dateIso, shiftKey, people, todayIso) {
     var cancel = el("button", "btn-outline", "Cancel"); cancel.type = "button";
     row.appendChild(submit); row.appendChild(cancel); form.appendChild(row);
     var status = el("div", "note"); status.setAttribute("role", "status"); form.appendChild(status); formArea.appendChild(form);
-    button.addEventListener("click", function () { form.hidden = !form.hidden; button.setAttribute("aria-expanded", String(!form.hidden)); if (!form.hidden) name.focus(); });
+    button.addEventListener("click", function () { if (!requireSignIn()) return; form.hidden = !form.hidden; button.setAttribute("aria-expanded", String(!form.hidden)); if (!form.hidden) name.focus(); });
     cancel.addEventListener("click", function () { form.hidden = true; button.setAttribute("aria-expanded", "false"); button.focus(); });
     form.addEventListener("submit", async function (event) {
       event.preventDefault();
@@ -539,7 +583,7 @@ function renderLoadNotes(dateIso, shiftKey, actions, allowNotes) {
   var caption = el("p", "note", "Check what you completed. Unchecked items mean not reported in this update.");
   form.appendChild(caption);
   var nameLabel = el("label", "field", "Your name");
-  var name = el("input"); name.type = "text"; name.autocomplete = "name"; name.maxLength = 60; name.value = lsGet(LS_NAME, "");
+  var name = el("input"); name.type = "text"; name.autocomplete = "name"; name.maxLength = 60; name.value = currentUser ? currentUser.name : ""; name.readOnly = true;
   nameLabel.appendChild(name); form.appendChild(nameLabel);
   var checks = {};
   LOADS.forEach(function (load) {
@@ -578,6 +622,7 @@ function renderLoadNotes(dateIso, shiftKey, actions, allowNotes) {
   }
   function close() { form.hidden = true; button.setAttribute("aria-expanded", "false"); button.focus(); }
   button.addEventListener("click", function () {
+    if (!requireSignIn()) return;
     form.hidden = !form.hidden; button.setAttribute("aria-expanded", String(!form.hidden));
     if (!form.hidden) name.focus();
   });
@@ -656,7 +701,7 @@ function downscale(file, cb) {
 
 /* ---- Main navigation ---- */
 function initTabs() {
-  var tabs = [document.getElementById("schedule-tab"), document.getElementById("instructions-tab")];
+  var tabs = [document.getElementById("schedule-tab"), document.getElementById("instructions-tab"), document.getElementById("volunteers-tab")];
   function selectTab(index, focus) {
     tabs.forEach(function (tab, i) {
       var selected = i === index;
@@ -686,6 +731,7 @@ function initTabs() {
   var bl = document.getElementById("backup-list");
   BACKUPS.forEach(function (b) { bl.appendChild(el("div", "backup", b)); });
   renderInstructions();
+  await initPeople();
   render();
   await syncShared();
   setInterval(function () { if (!document.hidden) syncShared(); }, 30000);

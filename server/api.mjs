@@ -1,3 +1,4 @@
+import { AuthError, handlePeople, sessionUser } from './volunteers.mjs';
 const MAX_BODY = 6 * 1024 * 1024;
 const LOADS = ['kitchen', 'pujari', 'deity'];
 const STAGES = ['washed', 'dried', 'folded'];
@@ -48,12 +49,12 @@ async function readSchedule(url, env) {
   const backups = await env.DB.prepare('SELECT * FROM shift_backups WHERE service_date BETWEEN ? AND ?').bind(from, to).all();
   return json({ today: today(), updates: updates.results.map(row => rowUpdate(row, photos.results.filter(p => p.update_id === row.id))), backups: Object.fromEntries(backups.results.map(row => [row.service_date + ':' + row.shift, { ...JSON.parse(row.state_json), version: row.version }])) });
 }
-async function saveUpdate(data, env) {
+async function saveUpdate(data, env, user) {
   const day = date(data.date), nowDay = today();
   reject(day < addDays(nowDay, -1) || day > nowDay, 'Notes can be added only for yesterday and today.');
   reject(!['am', 'pm'].includes(data.shift), 'Invalid shift.');
   reject(typeof data.id !== 'string' || !/^[a-zA-Z0-9-]{16,64}$/.test(data.id), 'Invalid update identifier.');
-  const who = text(data.who, 60, true), notes = text(data.text, 1000);
+  const who = user.name, notes = text(data.text, 1000);
   reject(!Array.isArray(data.photos) || data.photos.length > 4, 'Attach up to four photos.');
   const loads = {}; let any = false;
   for (const load of LOADS) {
@@ -81,7 +82,7 @@ async function saveUpdate(data, env) {
   try {
     for (let i = 0; i < images.length; i++) await env.PHOTOS.put(keys[i], images[i], { httpMetadata: { contentType: 'image/jpeg' } });
     await env.DB.batch([
-      env.DB.prepare('INSERT INTO load_updates (id, service_date, shift, volunteer_name, loads_json, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(data.id, day, data.shift, who, JSON.stringify(loads), notes, time),
+      env.DB.prepare('INSERT INTO load_updates (id, service_date, shift, volunteer_name, loads_json, notes, created_at, volunteer_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(data.id, day, data.shift, who, JSON.stringify(loads), notes, time, user.id),
       ...images.map((bytes, i) => env.DB.prepare('INSERT INTO update_photos (object_key, update_id, content_type, byte_size, created_at) VALUES (?, ?, ?, ?, ?)').bind(keys[i], data.id, 'image/jpeg', bytes.length, time))
     ]);
   } catch (error) {
@@ -92,7 +93,7 @@ async function saveUpdate(data, env) {
   }
   return json({ saved: true, id: data.id }, 201);
 }
-async function saveBackup(data, env) {
+async function saveBackup(data, env, user) {
   const day = date(data.date), nowDay = today();
   reject(day < nowDay || day > addDays(nowDay, 6), 'Backup requests are available for today and the next six days.');
   reject(!['am', 'pm'].includes(data.shift) || !['request', 'offer'].includes(data.action), 'Invalid shift or action.');
@@ -104,10 +105,10 @@ async function saveBackup(data, env) {
   const time = new Date().toISOString(); let next;
   if (data.action === 'offer') {
     reject(!current || current.cover, 'This shift is no longer waiting for a backup.', 409);
-    next = { ...current, cover: name, coveredAt: time };
+    next = { ...current, cover: name, coveredAt: time, coveredBy: user.id };
   } else {
     reject(current && !current.cover, 'A backup has already been requested for this shift.', 409);
-    next = { person: name, notes, requestedAt: time, wasBackup: !!current?.cover, history: current ? [...(current.history || []), { ...current, history: undefined }] : [] };
+    next = { person: name, notes, requestedAt: time, requestedBy: user.id, wasBackup: !!current?.cover, history: current ? [...(current.history || []), { ...current, history: undefined }] : [] };
   }
   const result = row
     ? await env.DB.prepare('UPDATE shift_backups SET state_json = ?, version = version + 1, updated_at = ? WHERE service_date = ? AND shift = ? AND version = ?').bind(JSON.stringify(next), time, day, data.shift, data.version).run()
@@ -119,6 +120,8 @@ export async function handleApi(request, env) {
   try {
     const url = new URL(request.url);
     reject(!env.DB || !env.PHOTOS, 'Shared storage is not connected yet.', 503);
+    const user = await sessionUser(request, env);
+    if (request.method === 'GET') { const result = await handlePeople(request, env, url, null, user); if (result) return result; }
     if (request.method === 'GET' && url.pathname === '/api/schedule') return await readSchedule(url, env);
     if (request.method === 'GET' && url.pathname.startsWith('/api/photos/')) {
       const key = url.pathname.slice('/api/photos/'.length);
@@ -130,11 +133,14 @@ export async function handleApi(request, env) {
     reject(request.method !== 'POST', 'Not found.', 404);
     reject(request.headers.get('Origin') !== url.origin, 'Submit updates from this website.', 403);
     const data = await body(request);
-    if (url.pathname === '/api/updates') return await saveUpdate(data, env);
-    if (url.pathname === '/api/backups') return await saveBackup(data, env);
+    const peopleResult = await handlePeople(request, env, url, data, user);
+    if (peopleResult) return peopleResult;
+    reject(!user, 'Please sign in with an approved volunteer account.', 401);
+    if (url.pathname === '/api/updates') return await saveUpdate(data, env, user);
+    if (url.pathname === '/api/backups') return await saveBackup(data, env, user);
     throw new HttpError(404, 'Not found.');
   } catch (error) {
-    if (!(error instanceof HttpError)) console.error('Shared storage request failed', error);
-    return json({ error: error instanceof HttpError ? error.message : 'Could not save or load shared data. Please try again.' }, error.status || 500);
+    if (!(error instanceof HttpError) && !(error instanceof AuthError)) console.error('Shared storage request failed', error);
+    return json({ error: (error instanceof HttpError || error instanceof AuthError) ? error.message : 'Could not save or load shared data. Please try again.' }, error.status || 500);
   }
 }

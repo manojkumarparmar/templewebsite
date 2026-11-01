@@ -1,0 +1,26 @@
+import { DatabaseSync } from 'node:sqlite';
+import { readFile } from 'node:fs/promises';
+import { handleApi } from '../server/api.mjs';
+import { sha256 } from '../server/volunteers.mjs';
+const migrations = await Promise.all(['0001_shared_storage.sql', '0002_volunteers_auth.sql'].map(file => readFile(new URL('../migrations/' + file, import.meta.url), 'utf8')));
+const rawToken = 'a'.repeat(64), tokenHash = await sha256(rawToken);
+export function fixture(options = {}) {
+  const db = new DatabaseSync(':memory:'); db.exec('PRAGMA foreign_keys=ON'); migrations.forEach(sql => db.exec(sql));
+  db.prepare('UPDATE volunteers SET email=? WHERE id=?').run('super@example.com', 'nanda-kumar-das');
+  db.prepare('INSERT INTO auth_sessions(token_hash,volunteer_id,expires_at) VALUES(?,?,?)').run(tokenHash, options.userId || 'nanda-kumar-das', Math.floor(Date.now() / 1000) + 3600);
+  const objects = new Map();
+  const env = {
+    DB: {
+      prepare(sql) { let args = []; return {
+        bind(...values) { args = values; return this; },
+        async first() { return db.prepare(sql).get(...args) || null; },
+        async all() { return { results: db.prepare(sql).all(...args) }; },
+        async run() { const result = db.prepare(sql).run(...args); return { meta: { changes: result.changes } }; }
+      }; },
+      async batch(statements) { db.exec('BEGIN'); try { const results = []; for (const statement of statements) results.push(await statement.run()); db.exec('COMMIT'); return results; } catch (error) { db.exec('ROLLBACK'); throw error; } }
+    },
+    PHOTOS: { async put(key, bytes) { objects.set(key, bytes); }, async get(key) { return objects.has(key) ? { body: objects.get(key) } : null; }, async delete(key) { objects.delete(key); } }
+  };
+  const call = (path, data, origin = 'https://templeservices.pages.dev', cookie = options.anonymous ? '' : 'tls_session=' + rawToken) => handleApi(new Request('https://templeservices.pages.dev/api/' + path, { ...(data ? { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: cookie }, body: JSON.stringify(data) } : { headers: { Cookie: cookie } }) }), env);
+  return { db, env, call, objects };
+}
