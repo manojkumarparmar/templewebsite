@@ -245,7 +245,7 @@ dialog .auth-heading h2 { font-size: 22px; }
   </section>
   </div>
   <div class="tab-panel" id="volunteers-panel" role="tabpanel" aria-labelledby="volunteers-tab" hidden>
-    <div class="directory-heading"><div><h2>Volunteers</h2><p class="note">Recurring service assignments, availability, and roles.</p></div><button type="button" class="btn-small" id="add-volunteer" hidden>Add volunteer</button></div>
+    <div class="directory-heading"><div><h2>Volunteers</h2><p class="note">Recurring service assignments, availability, and roles.</p></div><button type="button" class="btn-small" id="manage-volunteers">Sign in to manage volunteers</button><button type="button" class="btn-primary" style="padding-inline:16px" id="add-volunteer" aria-expanded="false" aria-controls="new-volunteer" hidden>Add volunteer</button></div>
     <p class="note" id="volunteers-status" role="status">Loading volunteers…</p>
     <div class="directory-controls" role="search" aria-label="Filter volunteers">
       <label class="field">Search volunteers<input id="volunteer-search" type="search" placeholder="Name or availability"></label>
@@ -254,7 +254,7 @@ dialog .auth-heading h2 { font-size: 22px; }
       <label class="field">Sort by<select id="volunteer-sort"><option value="name">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="shifts">Most recurring shifts</option></select></label>
     </div>
     <p class="note" id="volunteer-count" role="status" aria-live="polite"></p>
-    <div id="new-volunteer"></div>
+    <div id="new-volunteer" class="panel volunteer-editor" hidden></div>
     <div class="volunteer-grid" id="volunteer-list"></div>
   </div>
 

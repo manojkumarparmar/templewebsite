@@ -36,6 +36,12 @@ function updateAccount() {
   document.getElementById('sign-in').hidden = !!currentUser;
   document.getElementById('sign-out').hidden = !currentUser;
   document.getElementById('add-volunteer').hidden = !managesVolunteers();
+  document.getElementById('manage-volunteers').hidden = !!currentUser;
+  if (!managesVolunteers()) closeNewVolunteer();
+}
+function closeNewVolunteer() {
+  var box = document.getElementById('new-volunteer'); box.textContent = ''; box.hidden = true;
+  document.getElementById('add-volunteer').setAttribute('aria-expanded', 'false');
 }
 async function signedIn(user) {
   currentUser = user; updateAccount();
@@ -62,7 +68,7 @@ async function refreshVolunteers() {
 }
 function renderVolunteers() {
   var list = document.getElementById('volunteer-list'); list.textContent = '';
-  document.getElementById('volunteers-status').textContent = managesVolunteers() ? 'You can manage volunteer records and roles. Sign-in emails are visible only to administrators.' : 'Only administrators can edit volunteer records.';
+  document.getElementById('volunteers-status').textContent = managesVolunteers() ? 'Use Add volunteer to add a person, or Edit volunteer on a row to update their name, sign-in email, roles, availability, and recurring shifts.' : currentUser ? 'You are signed in with viewing access. Ask an administrator to add or edit volunteers.' : 'Sign in with an administrator account to add people or edit volunteer details.';
   var search = document.getElementById('volunteer-search').value.trim().toLowerCase();
   var role = document.getElementById('volunteer-role').value;
   var day = document.getElementById('volunteer-day').value;
@@ -102,7 +108,7 @@ function renderVolunteers() {
       var editor = el('div', 'volunteer-editor'); editor.hidden = true; card.appendChild(editor);
       button.addEventListener('click', function () {
         editor.hidden = !editor.hidden; button.setAttribute('aria-expanded', String(!editor.hidden));
-        if (!editor.hidden) { editor.textContent = ''; editor.appendChild(volunteerForm(volunteer, function () { editor.hidden = true; button.setAttribute('aria-expanded', 'false'); button.focus(); })); }
+        if (!editor.hidden) { editor.textContent = ''; editor.appendChild(volunteerForm(volunteer, function () { editor.hidden = true; button.setAttribute('aria-expanded', 'false'); button.focus(); })); editor.querySelector('input').focus(); }
       });
     }
     list.appendChild(card);
@@ -111,6 +117,8 @@ function renderVolunteers() {
 function volunteerForm(volunteer, close) {
   var original = volunteer || { name: '', email: '', availabilityNotes: '', roles: ['volunteer'], assignments: [], active: true };
   var form = el('form', 'form');
+  form.appendChild(el('h3', null, volunteer ? 'Edit ' + original.name : 'Add a volunteer'));
+  form.appendChild(el('p', 'note', 'Enter the display name, including Mtj or Pr where appropriate. A sign-in email is optional for volunteers and required for administrators.'));
   function inputField(title, type, value, max) {
     var label = el('label', 'field', title); var input = el(type === 'textarea' ? 'textarea' : 'input');
     if (type !== 'textarea') input.type = type; else input.rows = 3;
@@ -148,13 +156,15 @@ function volunteerForm(volunteer, close) {
   }
   form.appendChild(row); var status = el('div', 'note'); status.setAttribute('role', 'status'); form.appendChild(status);
   async function persist(path, data) {
-    save.disabled = true; if (remove) remove.disabled = true; status.textContent = 'Saving…';
+    save.disabled = true; cancel.disabled = true; if (remove) remove.disabled = true; status.textContent = 'Saving…';
     try {
       await api(path, data);
       currentUser = (await api('auth/me')).user; updateAccount();
-      await refreshVolunteers(); document.getElementById('new-volunteer').textContent = ''; render(); await syncShared(true);
-      document.getElementById('volunteers-status').textContent = 'Volunteer record saved.';
-    } catch (error) { status.textContent = error.message; save.disabled = false; if (remove) remove.disabled = false; }
+      if (!original.id) ['volunteer-search', 'volunteer-role', 'volunteer-day'].forEach(function (id) { document.getElementById(id).value = ''; });
+      await refreshVolunteers(); closeNewVolunteer(); render(); await syncShared(true);
+      document.getElementById('volunteers-status').textContent = data.name ? data.name + (original.id ? ' updated.' : ' added to the volunteer list.') : 'Volunteer record saved.';
+      document.getElementById('add-volunteer').focus();
+    } catch (error) { status.textContent = error.message; save.disabled = false; cancel.disabled = false; if (remove) remove.disabled = false; }
   }
   form.addEventListener('submit', function (event) {
     event.preventDefault(); if (save.disabled) return;
@@ -170,6 +180,7 @@ async function initPeople() {
     document.getElementById(id).addEventListener(id === 'volunteer-search' ? 'input' : 'change', renderVolunteers);
   });
   document.getElementById('sign-in').addEventListener('click', openSignIn);
+  document.getElementById('manage-volunteers').addEventListener('click', openSignIn);
   document.getElementById('auth-close').addEventListener('click', function () { document.getElementById('auth-dialog').close(); });
   document.getElementById('sign-out').addEventListener('click', async function () {
     try { await api('auth/logout', {}); currentUser = null; updateAccount(); await refreshVolunteers(); render(); }
@@ -177,7 +188,12 @@ async function initPeople() {
   });
   document.getElementById('add-volunteer').addEventListener('click', function () {
     if (!managesVolunteers()) return;
-    var box = document.getElementById('new-volunteer'); box.textContent = ''; box.appendChild(volunteerForm(null, function () { box.textContent = ''; }));
+    var box = document.getElementById('new-volunteer');
+    if (!box.hidden) { closeNewVolunteer(); return; }
+    box.textContent = ''; box.hidden = false;
+    document.getElementById('add-volunteer').setAttribute('aria-expanded', 'true');
+    box.appendChild(volunteerForm(null, function () { closeNewVolunteer(); document.getElementById('add-volunteer').focus(); }));
+    box.querySelector('input').focus();
   });
   document.getElementById('change-email').addEventListener('click', function () { document.getElementById('email-verify').hidden = true; document.getElementById('email-start').hidden = false; });
   document.getElementById('email-start').addEventListener('submit', async function (event) {

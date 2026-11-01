@@ -5,6 +5,22 @@ import { sha256, verifyGoogle } from '../server/volunteers.mjs';
 
 async function directory(call) { return (await (await call('volunteers')).json()).volunteers; }
 
+test('administrator can add a volunteer and edit their details and recurring assignments', async () => {
+  const {call} = fixture();
+  const person = {name:'New Volunteer Mtj',email:'new@example.com',availabilityNotes:'Evenings',roles:['volunteer'],assignments:[],active:true};
+  const created = await call('volunteers/save', person);
+  assert.equal(created.status, 200);
+  const {id} = await created.json();
+  let saved = (await directory(call)).find(v => v.id === id);
+  assert.equal(saved.name, person.name);
+  assert.equal(saved.email, person.email);
+  assert.equal((await call('volunteers/save', {...saved,name:'Updated Volunteer Mtj',roles:['volunteer','backup'],assignments:[{weekday:4,shift:'pm'}]})).status, 200);
+  saved = (await directory(call)).find(v => v.id === id);
+  assert.equal(saved.name, 'Updated Volunteer Mtj');
+  assert.deepEqual(saved.assignments, [{weekday:4,shift:'pm'}]);
+  assert.ok(saved.roles.includes('backup'));
+});
+
 test('updated roster preserves assignments and uses the requested names', async () => {
   const {call} = fixture({anonymous:true});
   const people = await directory(call);

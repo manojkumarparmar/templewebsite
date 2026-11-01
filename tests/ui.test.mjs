@@ -58,6 +58,33 @@ async function fixture() {
 }
 const buttons = (node, text) => find(node, n => n.tag === 'button' && n.text === text);
 
+test('volunteer management exposes add and edit forms only to administrators', async () => {
+  const {nodes, context} = await fixture();
+  context.currentUser = null; context.updateAccount();
+  assert.equal(nodes['manage-volunteers'].hidden, false);
+  assert.equal(nodes['add-volunteer'].hidden, true);
+  context.currentUser = {id:'admin',roles:['admin'],name:'Admin'};
+  context.updateAccount(); context.renderVolunteers();
+  assert.equal(nodes['manage-volunteers'].hidden, true);
+  assert.equal(nodes['add-volunteer'].hidden, false);
+  nodes['add-volunteer'].events.click();
+  assert.equal(nodes['new-volunteer'].hidden, false);
+  assert.equal(nodes['add-volunteer'].attrs['aria-expanded'], 'true');
+  assert.equal(nodes['new-volunteer'].querySelector('input').focused, true);
+  buttons(nodes['new-volunteer'], 'Cancel')[0].events.click();
+  assert.equal(nodes['new-volunteer'].hidden, true);
+  const edit = buttons(nodes['volunteer-list'], 'Edit volunteer')[0];
+  edit.events.click();
+  assert.equal(edit.attrs['aria-expanded'], 'true');
+  const editor = find(nodes['volunteer-list'], n => n.className === 'volunteer-editor' && !n.hidden)[0];
+  assert.ok(editor.querySelector('input').value);
+  buttons(editor, 'Cancel')[0].events.click();
+  assert.equal(edit.attrs['aria-expanded'], 'false');
+  nodes['add-volunteer'].events.click();
+  context.currentUser = null; context.updateAccount();
+  assert.equal(nodes['new-volunteer'].hidden, true);
+});
+
 test('directory combines search, role and service-day filters and supports sorting', async () => {
   const { nodes, context } = await fixture();
   context.volunteerDirectory = [
