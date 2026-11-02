@@ -73,7 +73,7 @@ async function refreshVolunteers() {
 }
 function renderVolunteers() {
   var list = document.getElementById('volunteer-list'); list.textContent = '';
-  document.getElementById('volunteers-status').textContent = managesVolunteers() ? 'Use Add volunteer to add a person, or Edit volunteer on a row to update their name, sign-in email, roles, availability, and recurring shifts.' : currentUser ? 'You are signed in with viewing access. Ask an administrator to add or edit volunteers.' : '';
+  document.getElementById('volunteers-status').textContent = '';
   var search = document.getElementById('volunteer-search').value.trim().toLowerCase();
   var role = document.getElementById('volunteer-role').value;
   var day = document.getElementById('volunteer-day').value;
@@ -97,14 +97,15 @@ function renderVolunteers() {
     if (!volunteer.active) roles.appendChild(el('span', 'chip away', 'Inactive'));
     identity.appendChild(roles);
     var service = el('div', 'volunteer-section'); card.appendChild(service);
-    service.appendChild(el('div', 'label', 'Recurring service'));
+    if (volunteer.assignments.length) service.appendChild(el('div', 'label', 'Recurring service'));
     var assignments = el('ul', 'assignment-list');
     volunteer.assignments.forEach(function (assignment) { assignments.appendChild(el('li', null, WEEKDAYS[assignment.weekday] + ' · ' + (assignment.shift === 'am' ? 'Morning' : 'Evening'))); });
     if (volunteer.assignments.length) service.appendChild(assignments);
-    else service.appendChild(el('p', 'note', 'No recurring shifts assigned.'));
     var availability = el('div', 'volunteer-section'); card.appendChild(availability);
-    availability.appendChild(el('div', 'label', 'Availability'));
-    availability.appendChild(el('p', 'note', volunteer.availabilityNotes || 'No availability notes added.'));
+    if (volunteer.availabilityNotes) {
+      availability.appendChild(el('div', 'label', 'Availability'));
+      availability.appendChild(el('p', 'note', volunteer.availabilityNotes));
+    }
     if (managesVolunteers() && volunteer.email) identity.appendChild(el('p', 'note', volunteer.email));
     if (managesVolunteers() && volunteer.phone) identity.appendChild(el('p', 'note', volunteer.phone));
     var canEdit = managesVolunteers() && (!volunteer.isSuperAdmin || currentUser.isSuperAdmin);
