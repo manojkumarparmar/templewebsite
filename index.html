@@ -516,7 +516,7 @@ function renderScheduledShift(dateIso, shiftKey, people, todayIso) {
   var actions = el("div", "shift-actions");
   var backupAction = el("div");
   header.appendChild(details); header.appendChild(actions); shift.appendChild(header);
-  var updates = renderLoadNotes(dateIso, shiftKey, actions, dateIso <= todayIso);
+  var updates = renderLoadNotes(dateIso, shiftKey, actions, !!currentUser && dateIso >= iso(addDays(templeToday(), -1)) && dateIso <= todayIso);
   actions.appendChild(backupAction);
   var formArea = el("div", "backup-form-area"); shift.appendChild(formArea); shift.appendChild(updates);
   var key = dateIso + ":" + shiftKey;
@@ -539,7 +539,10 @@ function renderScheduledShift(dateIso, shiftKey, people, todayIso) {
       }
       if (request.notes) details.appendChild(el("div", "note", request.notes));
     }
-    if (dateIso < todayIso) return;
+    if (!currentUser || dateIso < todayIso) return;
+    var managesShift = currentUser.isSuperAdmin || currentUser.roles.some(function (role) { return ['super-admin','admin','coordinator'].indexOf(role) >= 0; });
+    var assigned = request && request.cover ? request.coveredBy === currentUser.id : people.indexOf(currentUser.name) >= 0;
+    if (!pending && !managesShift && !assigned) return;
     var button = el("button", "btn-small", pending ? "Opt for backup" : "Need backup"); button.type = "button"; button.disabled = !sharedReady;
     button.setAttribute("aria-expanded", "false");
     var formId = "backup-" + key.replace(":", "-"); button.setAttribute("aria-controls", formId);
@@ -549,6 +552,7 @@ function renderScheduledShift(dateIso, shiftKey, people, todayIso) {
     var label = el("label", "field", pending ? "Backup volunteer's name" : "Name of person who is unavailable");
     var name = el("input"); name.type = "text"; name.maxLength = 60; name.required = true;
     name.value = pending ? (currentUser ? currentUser.name : "") : (request && request.cover ? request.cover : (people.length === 1 ? people[0] : ""));
+    if (!pending && !managesShift) { name.value = currentUser.name; name.readOnly = true; }
     label.appendChild(name); form.appendChild(label);
     var notes = el("textarea"); notes.rows = 3; notes.maxLength = 1000;
     if (!pending) { var notesLabel = el("label", "field", "Notes (optional)"); notesLabel.appendChild(notes); form.appendChild(notesLabel); }

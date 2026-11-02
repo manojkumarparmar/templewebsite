@@ -69,6 +69,12 @@ is ignored. Only the remembered volunteer name remains in browser storage.
 
 ## Backup requests
 
+Shift action buttons are hidden until sign-in. Add/Edit Notes is available only
+for yesterday and today. Need backup is available only for today and future dates,
+and only to the currently assigned volunteer (including a confirmed replacement),
+coordinators, admins and the super-admin. The server enforces these permissions.
+Other signed-in active volunteers can use Opt for backup on a pending request.
+
 Today and future shifts offer **Need backup**, collecting the unavailable person's name and
 optional notes. The shift is highlighted until someone uses **Opt for backup** and submits
 their name. The backup volunteer then replaces the scheduled name, with a backup label and

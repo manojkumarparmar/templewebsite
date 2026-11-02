@@ -67,6 +67,23 @@ async function fixture() {
 }
 const buttons = (node, text) => find(node, n => n.tag === 'button' && n.text === text);
 
+test('shift actions respect sign-in, dates, assignment and coordinator permissions', async () => {
+  const {nodes,context}=await fixture();
+  context.currentUser=null; context.render();
+  assert.equal(buttons(nodes.days,'Add Notes').length,0);
+  assert.equal(buttons(nodes.days,'Need backup').length,0);
+  context.currentUser={id:'test',name:'Unassigned',roles:['volunteer']}; context.render();
+  assert.equal(buttons(nodes.days,'Add Notes').length,4);
+  assert.equal(buttons(nodes.days,'Need backup').length,0);
+  const plan=context.WEEKLY_PLAN[(context.templeToday().getDay()+6)%7];
+  context.currentUser.name=plan.am[0]; context.render();
+  assert.equal(buttons(nodes.days.children[1].children[1],'Need backup').length,1);
+  assert.equal(buttons(nodes.days.children[0],'Need backup').length,0);
+  context.currentUser.roles=['coordinator']; context.render();
+  assert.equal(buttons(nodes.days,'Need backup').length,14);
+  assert.equal(buttons(nodes.days.children[2],'Add Notes').length,0);
+});
+
 test('notes switch from Add to Edit for the author, prefill their entry, and allow deletion', async () => {
   const f=await fixture(), {nodes,context}=f;
   const shift=nodes.days.children[1].children[1];
@@ -201,7 +218,7 @@ test('shared load updates preserve drafts during refresh and render summaries af
   assert.equal(f.updates[0].shift, 'am'); assert.equal(f.updates[0].loads.kitchen.washed, true);
 });
 test('backup changes use shared state while preserving laundry drafts', async () => {
-  const { nodes, context } = await fixture(); const shift = nodes.days.children[1].children[1];
+  const { nodes, context } = await fixture(); context.currentUser.roles=['coordinator']; context.render(); const shift = nodes.days.children[1].children[1];
   const noteForm = find(shift, n => n.tag === 'form' && n.id.startsWith('update-'))[0];
   find(noteForm, n => n.tag === 'textarea')[0].value = 'Keep my draft';
   let form = find(shift, n => n.tag === 'form' && n.id.startsWith('backup-'))[0];
@@ -227,8 +244,9 @@ test('three tabs work, public directory has no editing controls, and signed-out 
   assert.equal(nodes['schedule-panel'].hidden, false);
   assert.equal(buttons(nodes['volunteer-list'], 'Edit volunteer').length, 0);
   context.currentUser = null;
-  buttons(nodes.days.children[1], 'Add Notes')[0].events.click();
-  assert.equal(nodes['auth-dialog'].open, true);
+  context.render();
+  assert.equal(buttons(nodes.days,'Add Notes').length,0);
+  assert.equal(buttons(nodes.days,'Need backup').length,0);
   const updateForm = find(nodes.days.children[1], n => n.tag === 'form' && n.id.startsWith('update-'))[0];
   assert.equal(updateForm.hidden, true);
 });

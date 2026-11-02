@@ -128,6 +128,11 @@ async function saveBackup(data, env, user) {
     reject(!current || current.cover, 'This shift is no longer waiting for a backup.', 409);
     next = { ...current, cover: name, coveredAt: time, coveredBy: user.id };
   } else {
+    const managesShift = user.isSuperAdmin || user.roles.some(role=>['super-admin','admin','coordinator'].includes(role));
+    const weekday = (new Date(day+'T12:00:00Z').getUTCDay()+6)%7;
+    const assigned = current?.cover ? current.coveredBy === user.id : user.assignments.some(a=>a.weekday===weekday && a.shift===data.shift);
+    reject(!managesShift && !assigned, 'Only the assigned volunteer or a coordinator or administrator can request backup for this shift.',403);
+    reject(!managesShift && name !== user.name, 'You can request backup only for yourself.',403);
     reject(current && !current.cover, 'A backup has already been requested for this shift.', 409);
     next = { person: name, notes, requestedAt: time, requestedBy: user.id, wasBackup: !!current?.cover, history: current ? [...(current.history || []), { ...current, history: undefined }] : [] };
   }

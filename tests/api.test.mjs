@@ -38,6 +38,29 @@ test('backup requests support repeat replacements and reject competing volunteer
   assert.equal(schedule.backups[serviceDay + ':am'].history.length, 1);
   assert.equal(schedule.backups[serviceDay + ':pm'], undefined);
 });
+
+test('backup requests require assignment or a managing role, including requests by the current backup', async () => {
+  const {call,db}=fixture({userId:'swetha'});
+  const weekday=(new Date(serviceDay+'T12:00:00Z').getUTCDay()+6)%7;
+  db.prepare('UPDATE volunteers SET assignments_json=? WHERE id=?').run('[]','swetha');
+  const data={date:serviceDay,shift:'am',action:'request',name:'Swetha Mtj',notes:'',version:0};
+  assert.equal((await call('backups',data)).status,403);
+  db.prepare('UPDATE volunteers SET assignments_json=? WHERE id=?').run(JSON.stringify([{weekday,shift:'am'}]),'swetha');
+  assert.equal((await call('backups',{...data,name:'Another volunteer'})).status,403);
+  assert.equal((await call('backups',data)).status,200);
+  db.prepare('UPDATE auth_sessions SET volunteer_id=?').run('hema');
+  assert.equal((await call('backups',{...data,action:'offer',name:'Hema Mtj',version:1})).status,200);
+  db.prepare('UPDATE auth_sessions SET volunteer_id=?').run('swetha');
+  assert.equal((await call('backups',{...data,version:2})).status,403);
+  db.prepare('UPDATE auth_sessions SET volunteer_id=?').run('hema');
+  assert.equal((await call('backups',{...data,name:'Hema Mtj',version:2})).status,200);
+  for(const role of ['coordinator','admin']) {
+    const f=fixture({userId:'swetha'});
+    f.db.prepare('UPDATE volunteers SET assignments_json=?,roles_json=? WHERE id=?').run('[]',JSON.stringify([role]),'swetha');
+    assert.equal((await f.call('backups',data)).status,200);
+  }
+  assert.equal((await fixture().call('backups',data)).status,200);
+});
 test('validation rejects future notes, old backup requests, bad images, and cross-site writes', async () => {
   const { call } = fixture();
   assert.equal((await call('updates', { ...update(), date: dayAfter(1) })).status, 400);
