@@ -36,6 +36,7 @@ async function openSignIn() {
   } catch (error) { status.textContent = error.message; }
 }
 function updateAccount() {
+  updateHistoryAccess();
   document.getElementById('account-label').textContent = currentUser ? 'Signed in as ' + currentUser.name : '';
   document.getElementById('sign-in').hidden = !!currentUser;
   document.getElementById('sign-out').hidden = !currentUser;

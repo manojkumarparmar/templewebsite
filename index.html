@@ -232,7 +232,18 @@ dialog .auth-heading h2 { font-size: 22px; }
   </nav>
 
   <div class="tab-panel" id="schedule-panel" role="tabpanel" aria-labelledby="schedule-tab">
-  <div class="range" id="range"></div>
+  <div class="directory-heading"><div class="range" id="range"></div><button type="button" class="btn-small" id="view-history" hidden>View past shifts</button></div>
+  <section class="panel" id="history-panel" aria-labelledby="history-title" hidden>
+    <div class="directory-heading"><h2 id="history-title">Past shifts</h2><button type="button" class="btn-small" id="close-history">Back to schedule</button></div>
+    <div class="editor-actions" style="flex-wrap:wrap;margin:16px 0">
+      <button type="button" class="btn-outline" id="history-previous">Previous week</button>
+      <label class="field">Week containing<input type="date" id="history-date" required></label>
+      <button type="button" class="btn-outline" id="history-next">Next week</button>
+    </div>
+    <p class="note" id="history-status" role="status" aria-live="polite"></p>
+    <ul class="days" id="history-days" aria-label="Past shifts"></ul>
+  </section>
+  <div id="current-schedule">
   <div class="note" id="sync-status" role="status">Loading shared updatesâ€¦</div>
 
   <ul class="days" id="days" aria-label="Daily schedule"></ul>
@@ -257,6 +268,7 @@ dialog .auth-heading h2 { font-size: 22px; }
 
   </div>
 
+  </div>
   <div class="tab-panel" id="instructions-panel" role="tabpanel" aria-labelledby="instructions-tab" hidden>
   <aside style="padding:20px; border:2px solid var(--warn-line); border-radius:14px; background:var(--warn-bg); color:var(--warn-fg);" aria-labelledby="instructions-progress-title">
     <h2 id="instructions-progress-title" style="font-size:22px;">Work in progress</h2>
@@ -358,7 +370,8 @@ var SUN_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="1
 var MOON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>';
 
 /* Shared updates are stored in Cloudflare D1 and R2. */
-var sharedUpdates = [], sharedBackups = {}, sharedReady = false, syncing = false;
+var renderedDay = null;
+var sharedAssignments = {}, sharedUpdates = [], sharedBackups = {}, sharedReady = false, syncing = false;
 var sharedListeners = [];
 function templeToday() {
   var parts = new Intl.DateTimeFormat("en-US", {timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit"}).formatToParts(new Date());
@@ -378,7 +391,8 @@ async function syncShared(force) {
     try {
       var today = templeToday();
       var data = await api("schedule?from=" + iso(addDays(today, -1)) + "&to=" + iso(addDays(today, 6)));
-      sharedUpdates = data.updates; sharedBackups = data.backups; sharedReady = true;
+      sharedAssignments = data.assignments || {}; sharedUpdates = data.updates; sharedBackups = data.backups; sharedReady = true;
+      if (renderedDay !== iso(today)) render();
       sharedListeners.forEach(function (listener) { listener(); });
       document.getElementById("sync-status").textContent = "Updates are shared with everyone. Refreshes automatically every 30 seconds.";
     } catch (e) {
@@ -460,6 +474,7 @@ function renderShift(dateIso, shiftKey, people) {
 
 function render() {
   var today = templeToday();
+  renderedDay = iso(today);
   var firstDay = addDays(today, -1);
   var lastDay = addDays(today, 6);
 
@@ -521,14 +536,19 @@ function renderScheduledShift(dateIso, shiftKey, people, todayIso) {
   var formArea = el("div", "backup-form-area"); shift.appendChild(formArea); shift.appendChild(updates);
   var key = dateIso + ":" + shiftKey;
   function refresh() {
+    var savedPlan = sharedAssignments[dateIso];
+    if (savedPlan) people = savedPlan[shiftKey].map(function (v) { return v.name; });
+    else if (savedPlan === null) people = [];
     var request = sharedBackups[key];
     var pending = request && !request.cover;
     shift.className = "shift" + (pending ? " backup-needed" : "");
     details.textContent = ""; backupAction.textContent = ""; formArea.textContent = "";
     var displayedPeople = request && request.cover ? [request.cover] : (request && request.wasBackup ? [request.person] : people);
     var schedule = renderShift(dateIso, shiftKey, displayedPeople);
+    if (savedPlan === null && !request) { schedule.textContent=''; schedule.appendChild(el('div','label',shiftKey==='am'?'Morning':'Evening')); }
     schedule.className = "shift-details";
     details.appendChild(schedule);
+    if (savedPlan === null) details.appendChild(el('div','note','Original assignment not recorded.'));
     if (request) {
       if (request.cover) {
         details.appendChild(el("span", "chip cover", "Backup volunteer"));
@@ -783,6 +803,79 @@ function downscale(file, cb) {
   reader.readAsDataURL(file);
 }
 
+/* ---- Read-only history ---- */
+var historyRequest = 0;
+function updateHistoryAccess() {
+  document.getElementById('view-history').hidden = !currentUser;
+  if (!currentUser) closeHistory();
+}
+function closeHistory() {
+  historyRequest++;
+  document.getElementById('history-panel').hidden = true;
+  document.getElementById('current-schedule').hidden = false;
+  document.getElementById('history-days').textContent = '';
+  document.getElementById('history-status').textContent = '';
+}
+async function loadHistory() {
+  if (!currentUser) return closeHistory();
+  var input = document.getElementById('history-date'), status = document.getElementById('history-status');
+  var chosen = new Date(input.value + 'T12:00:00');
+  if (isNaN(chosen.getTime())) { status.textContent = 'Choose a valid date.'; return; }
+  var yesterday = addDays(templeToday(), -1);
+  if (iso(chosen) > iso(yesterday)) { chosen = yesterday; input.value = iso(chosen); }
+  var from = addDays(chosen, -((chosen.getDay()+6)%7)), to = addDays(from,6);
+  if (to > yesterday) to = yesterday;
+  var request = ++historyRequest, list = document.getElementById('history-days');
+  list.textContent = ''; status.textContent = 'Loading past shifts…';
+  document.getElementById('history-next').disabled = iso(addDays(from,7)) > iso(yesterday);
+  try {
+    var data = await api('schedule?from='+iso(from)+'&to='+iso(to));
+    if (request !== historyRequest || !currentUser) return;
+    status.textContent = fmt(from,{month:'short',day:'numeric',year:'numeric'})+' – '+fmt(to,{month:'short',day:'numeric',year:'numeric'})+' · Read only';
+    for (var d = from; d <= to; d = addDays(d,1)) {
+      var day = iso(d), card = el('li','day');
+      card.appendChild(el('h3',null,fmt(d,{weekday:'long',month:'short',day:'numeric'})));
+      ['am','pm'].forEach(function (shift) {
+        var plan = data.assignments[day], saved = plan && plan[shift], backup = data.backups[day+':'+shift];
+        var box = el('div','shift');
+        var names = backup && backup.cover ? [backup.cover] : (saved ? saved.map(function(v){return v.name;}) : []);
+        box.appendChild(el('div','label',shift==='am'?'Morning':'Evening'));
+        box.appendChild(el('div','who',names.length?names.join(' & '):(plan?'Unassigned':'Unknown')));
+        if (!plan) box.appendChild(el('div','note','Original assignment not recorded.'));
+        if (backup) {
+          box.appendChild(el('div','note',backup.cover ? backup.cover+' covered for '+backup.person+'.' : backup.person+' requested backup; no replacement recorded.'));
+          if (backup.notes) box.appendChild(el('div','note',backup.notes));
+          (backup.history || []).forEach(function (entry) { box.appendChild(el('div','note',entry.cover ? entry.cover+' previously covered for '+entry.person+'.' : entry.person+' previously requested backup.')); });
+        }
+        var entries = data.updates.filter(function(u){return u.date===day && u.shift===shift;});
+        entries.forEach(function(entry){box.appendChild(renderUpdate(entry));});
+        if (!entries.length) box.appendChild(el('div','note','No notes recorded.'));
+        card.appendChild(box);
+      });
+      list.appendChild(card);
+    }
+  } catch (error) { if (request === historyRequest) status.textContent = error.message; }
+}
+function initHistory() {
+  var input = document.getElementById('history-date');
+  input.value = iso(addDays(templeToday(),-1)); input.max = input.value;
+  document.getElementById('view-history').addEventListener('click',function(){
+    if (!currentUser) return;
+    document.getElementById('history-panel').hidden = false;
+    document.getElementById('current-schedule').hidden = true;
+    input.max = iso(addDays(templeToday(),-1)); loadHistory();
+  });
+  document.getElementById('close-history').addEventListener('click',function(){closeHistory();document.getElementById('view-history').focus();});
+  input.addEventListener('change',loadHistory);
+  ['previous','next'].forEach(function(direction){
+    document.getElementById('history-'+direction).addEventListener('click',function(){
+      var chosen = new Date(input.value+'T12:00:00');
+      var monday = addDays(chosen,-((chosen.getDay()+6)%7));
+      input.value = iso(addDays(monday,direction==='previous'?-7:7)); loadHistory();
+    });
+  });
+}
+
 /* ---- Main navigation ---- */
 function initTabs() {
   var tabs = [document.getElementById("schedule-tab"), document.getElementById("instructions-tab"), document.getElementById("volunteers-tab")];
@@ -812,6 +905,7 @@ function initTabs() {
 
 (async function init() {
   initTabs();
+  initHistory();
   var bl = document.getElementById("backup-list");
   BACKUPS.forEach(function (b) { bl.appendChild(el("div", "backup", b)); });
   renderInstructions();

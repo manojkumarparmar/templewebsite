@@ -72,7 +72,7 @@ function initRecurring() {
     try {
       await api('recurring/save', {volunteers:recurringDraft.map(function (v) { return {id:v.id,version:v.version,assignments:v.assignments}; })});
       recurringDraft = null;
-      await refreshVolunteers(); render(); renderRecurring();
+      await refreshVolunteers(); render(); renderRecurring(); await syncShared(true);
       status.textContent = 'Recurring schedule saved.'; document.getElementById('edit-recurring').focus();
     } catch (error) { status.textContent = error.message; }
     finally {

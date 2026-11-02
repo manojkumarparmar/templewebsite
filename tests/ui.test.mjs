@@ -43,7 +43,7 @@ async function fixture() {
         })));
         return Response.json({volunteers:[...roster.values()]});
       }
-      if (!options.body) return Response.json({ updates, backups });
+      if (!options.body) return Response.json({ assignments: {}, updates, backups });
       const data = JSON.parse(options.body);
       if (path === '/api/updates') {
         const existing=updates.findIndex(u=>u.id===data.id);
@@ -264,4 +264,25 @@ test('admin editor locks self-demotion and super-admin editor locks the protecte
   labels = find(editor, n => n.className === 'check-label');
   assert.equal(labels.find(n => labelText(n) === 'super-admin').children[0].disabled,true);
   assert.equal(buttons(editor,'Remove volunteer').length,0);
+});
+
+
+test('signed-in history is read only, supports week navigation, and clears on sign-out', async () => {
+  const {nodes,context}=await fixture();
+  assert.equal(nodes['view-history'].hidden,false);
+  nodes['view-history'].events.click();
+  await context.loadHistory();
+  assert.equal(nodes['history-panel'].hidden,false);
+  assert.equal(nodes['current-schedule'].hidden,true);
+  assert.ok(nodes['history-days'].children.length>0);
+  assert.equal(find(nodes['history-days'],n=>n.tag==='button'||n.tag==='form').length,0);
+  assert.ok(find(nodes['history-days'],n=>n.text==='Original assignment not recorded.').length>0);
+  const previous=nodes['history-date'].value;
+  nodes['history-previous'].events.click(); await context.loadHistory();
+  assert.ok(nodes['history-date'].value<previous);
+  context.currentUser=null; context.updateAccount();
+  assert.equal(nodes['view-history'].hidden,true);
+  assert.equal(nodes['history-panel'].hidden,true);
+  assert.equal(nodes['history-days'].children.length,0);
+  assert.equal(nodes['current-schedule'].hidden,false);
 });

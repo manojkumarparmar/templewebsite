@@ -210,3 +210,13 @@ Apply `0002_volunteers_auth.sql` once on an existing database after `0001`. This
 was applied in production through the D1 console. Do not reapply it to an initialized DB.
 
 Retention cleanup remains deferred. No automatic deletion has been enabled.
+
+
+## Historical shifts (November 1, 2026)
+
+- Signed-in active volunteers have View past shifts on Schedule, with Monday–Sunday browsing, a date picker, and a read-only view of notes/checklists/photos and backup history. Signing out clears history. Older schedule/photo API reads require sign-in; normal yesterday/today/upcoming schedule remains public.
+- Recurring changes apply to today/future only. D1 schedule_versions captures names, IDs and recurring assignments on volunteer insertion, assignment/name/active changes or deletion. Triggers save each complete plan in the same transaction as the change. This works across days without visits or scheduled jobs. Date lookups use the latest version before the end of the service date in America/Chicago, including DST. Today/future use the current plan.
+- Existing dates before the first version have unknown original assignments, explicitly labeled; do not backfill guessed historical names from today's roster. Existing notes and backup records are preserved.
+- History is read only. Yesterday remains editable through the normal schedule; older note save/delete requests are rejected. No historical corrections endpoint was added. Retention/automatic deletion remains disabled.
+- Migration 0006_schedule_history.sql was applied directly to production D1 on November 1, 2026. Do not reapply it or prior seed migrations. It seeds only the first plan version from the live roster; it never reseeds volunteers.
+- Verification: 40 tests pass, including week navigation/sign-out clearing, recurring changes and deactivation preserving previous dates, unknown assignments, access restrictions, and Chicago DST boundaries. Static build and Cloudflare function compilation passed. Local browser preview was unreachable from the embedded browser; signed-in History visual verification remains unconfirmed.

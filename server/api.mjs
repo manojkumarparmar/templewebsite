@@ -41,13 +41,32 @@ async function body(request) {
 function rowUpdate(row, photos) {
   return { id: row.id, date: row.service_date, shift: row.shift, who: row.volunteer_name, volunteerId: row.volunteer_id, version: row.version, updatedAt: row.updated_at, loads: JSON.parse(row.loads_json), text: row.notes, time: row.created_at, photos: photos.map(p => '/api/photos/' + p.object_key) };
 }
-async function readSchedule(url, env) {
+// UTC boundary of the next Chicago calendar day, including DST transitions.
+function dayEnd(day) {
+  const next = addDays(day, 1), base = Date.parse(next + 'T00:00:00Z');
+  let instant = base;
+  for (let i = 0; i < 3; i++) {
+    const offset = new Intl.DateTimeFormat('en-US', {timeZone:'America/Chicago',timeZoneName:'longOffset'}).formatToParts(new Date(instant)).find(p=>p.type==='timeZoneName').value;
+    const match = offset.match(/GMT([+-])(\d{2}):(\d{2})/);
+    const minutes = match ? (Number(match[2])*60+Number(match[3]))*(match[1]==='-'?-1:1) : 0;
+    instant = base - minutes*60000;
+  }
+  return new Date(instant).toISOString();
+}
+async function readSchedule(url, env, user) {
   const from = date(url.searchParams.get('from')), to = date(url.searchParams.get('to'));
   reject(to < from || to > addDays(from, 7), 'Request at most eight days.');
+  reject(from < addDays(today(), -1) && !user, 'Sign in to view past shifts.', 401);
+  const assignments = {};
+  for (let day = from; day <= to; day = addDays(day, 1)) {
+    const row = await env.DB.prepare('SELECT people_json FROM schedule_versions WHERE recorded_at < ? ORDER BY recorded_at DESC,id DESC LIMIT 1').bind(dayEnd(day < today() ? day : today())).first();
+    const weekday = (new Date(day+'T12:00:00Z').getUTCDay()+6)%7;
+    assignments[day] = row ? Object.fromEntries(['am','pm'].map(shift=>[shift,JSON.parse(row.people_json).filter(v=>v.assignments.some(a=>a.weekday===weekday && a.shift===shift)).map(v=>({id:v.id,name:v.name}))])) : null;
+  }
   const updates = await env.DB.prepare('SELECT * FROM load_updates WHERE deleted_at IS NULL AND service_date BETWEEN ? AND ? ORDER BY created_at DESC, id DESC').bind(from, to).all();
   const photos = await env.DB.prepare('SELECT p.* FROM update_photos p JOIN load_updates u ON p.update_id = u.id WHERE u.service_date BETWEEN ? AND ? ORDER BY p.object_key').bind(from, to).all();
   const backups = await env.DB.prepare('SELECT * FROM shift_backups WHERE service_date BETWEEN ? AND ?').bind(from, to).all();
-  return json({ today: today(), updates: updates.results.map(row => rowUpdate(row, photos.results.filter(p => p.update_id === row.id))), backups: Object.fromEntries(backups.results.map(row => [row.service_date + ':' + row.shift, { ...JSON.parse(row.state_json), version: row.version }])) });
+  return json({ today: today(), assignments, updates: updates.results.map(row => rowUpdate(row, photos.results.filter(p => p.update_id === row.id))), backups: Object.fromEntries(backups.results.map(row => [row.service_date + ':' + row.shift, { ...JSON.parse(row.state_json), version: row.version }])) });
 }
 async function saveUpdate(data, env, user) {
   const day = date(data.date), nowDay = today();
@@ -148,13 +167,14 @@ export async function handleApi(request, env) {
     reject(!env.DB || !env.PHOTOS, 'Shared storage is not connected yet.', 503);
     const user = await sessionUser(request, env);
     if (request.method === 'GET') { const result = await handlePeople(request, env, url, null, user); if (result) return result; }
-    if (request.method === 'GET' && url.pathname === '/api/schedule') return await readSchedule(url, env);
+    if (request.method === 'GET' && url.pathname === '/api/schedule') return await readSchedule(url, env, user);
     if (request.method === 'GET' && url.pathname.startsWith('/api/photos/')) {
       const key = url.pathname.slice('/api/photos/'.length);
-      const row = await env.DB.prepare('SELECT p.object_key FROM update_photos p JOIN load_updates u ON u.id=p.update_id WHERE p.object_key=? AND u.deleted_at IS NULL').bind(key).first();
+      const row = await env.DB.prepare('SELECT p.object_key,u.service_date FROM update_photos p JOIN load_updates u ON u.id=p.update_id WHERE p.object_key=? AND u.deleted_at IS NULL').bind(key).first();
       reject(!row, 'Photo not found.', 404);
+      reject(row.service_date < addDays(today(), -1) && !user, 'Sign in to view past photos.',401);
       const photo = await env.PHOTOS.get(key); reject(!photo, 'Photo not found.', 404);
-      return new Response(photo.body, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' } });
+      return new Response(photo.body, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' } });
     }
     reject(request.method !== 'POST', 'Not found.', 404);
     reject(request.headers.get('Origin') !== url.origin, 'Submit updates from this website.', 403);
@@ -165,6 +185,7 @@ export async function handleApi(request, env) {
     if (url.pathname === '/api/updates/delete') {
       const entry = await env.DB.prepare('SELECT * FROM load_updates WHERE id=?').bind(text(data.id,64,true)).first();
       reject(!entry, 'Notes not found.',404);
+      reject(entry.service_date < addDays(today(),-1), 'Past notes are read only.',403);
       reject(entry.volunteer_id !== user.id, 'Only the author can delete these notes.',403);
       if (entry.deleted_at) return json({deleted:true});
       reject(!Number.isInteger(data.version) || entry.version !== data.version, 'These notes changed. Reload before deleting.',409);
