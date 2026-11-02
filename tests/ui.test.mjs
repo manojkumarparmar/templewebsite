@@ -78,6 +78,12 @@ test('notes switch from Add to Edit for the author, prefill their entry, and all
   assert.equal(buttons(shift,'Edit Notes').length,1);
   buttons(shift,'Edit Notes')[0].events.click();
   assert.equal(find(form,n=>n.tag==='textarea')[0].value,'Original');
+  assert.equal(find(shift,n=>n.className==='entry').length,0);
+  await context.syncShared();
+  assert.equal(find(shift,n=>n.className==='entry').length,0);
+  buttons(form,'Cancel')[0].events.click();
+  assert.equal(find(shift,n=>n.className==='entry').length,1);
+  buttons(shift,'Edit Notes')[0].events.click();
   assert.equal(buttons(form,'Delete Notes')[0].hidden,false);
   find(form,n=>n.tag==='textarea')[0].value='Edited';
   await form.events.submit({preventDefault(){}});

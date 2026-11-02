@@ -666,10 +666,10 @@ function renderLoadNotes(dateIso, shiftKey, actions, allowNotes) {
     button.textContent = mine ? 'Edit Notes' : 'Add Notes';
     button.setAttribute('aria-label', (mine ? 'Edit Notes' : 'Add Notes') + ' for ' + dateIso + ' ' + (shiftKey === 'am' ? 'morning' : 'evening'));
     list.textContent = "";
-    loadUpdates().filter(function (n) { return n.date === dateIso && n.shift === shiftKey; })
+    loadUpdates().filter(function (n) { return n.date === dateIso && n.shift === shiftKey && (form.hidden || !editingEntry || n.id !== editingEntry.id); })
       .forEach(function (n) { list.appendChild(renderUpdate(n)); });
   }
-  function close() { form.hidden = true; button.setAttribute("aria-expanded", "false"); button.focus(); }
+  function close() { form.hidden = true; button.setAttribute("aria-expanded", "false"); refreshSummary(); button.focus(); }
   button.addEventListener("click", function () {
     if (!requireSignIn()) return;
     form.hidden = !form.hidden; button.setAttribute("aria-expanded", String(!form.hidden));
@@ -685,6 +685,7 @@ function renderLoadNotes(dateIso, shiftKey, actions, allowNotes) {
       removeNotes.hidden = !editingEntry;
       status.textContent = ''; text.focus();
     }
+    refreshSummary();
   });
   cancel.addEventListener("click", close);
   removeNotes.addEventListener('click', async function () {
