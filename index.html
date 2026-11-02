@@ -235,7 +235,7 @@ dialog .auth-heading h2 { font-size: 22px; }
   <div class="directory-heading"><div class="range" id="range"></div><button type="button" class="btn-small" id="view-history" hidden>View past shifts</button></div>
   <section class="panel" id="history-panel" aria-labelledby="history-title" hidden>
     <div class="directory-heading"><h2 id="history-title">Past shifts</h2><button type="button" class="btn-small" id="close-history">Back to schedule</button></div>
-    <div class="editor-actions" style="flex-wrap:wrap;margin:16px 0">
+    <div class="editor-actions" style="flex-wrap:wrap;align-items:flex-end;margin:16px 0">
       <button type="button" class="btn-outline" id="history-previous">Previous week</button>
       <label class="field">Week containing<input type="date" id="history-date" required></label>
       <button type="button" class="btn-outline" id="history-next">Next week</button>
@@ -834,7 +834,7 @@ async function loadHistory() {
     status.textContent = fmt(from,{month:'short',day:'numeric',year:'numeric'})+' – '+fmt(to,{month:'short',day:'numeric',year:'numeric'})+' · Read only';
     for (var d = from; d <= to; d = addDays(d,1)) {
       var day = iso(d), card = el('li','day');
-      card.appendChild(el('h3',null,fmt(d,{weekday:'long',month:'short',day:'numeric'})));
+      card.appendChild(el('h3','day-head day-name',fmt(d,{weekday:'long',month:'short',day:'numeric'})));
       ['am','pm'].forEach(function (shift) {
         var plan = data.assignments[day], saved = plan && plan[shift], backup = data.backups[day+':'+shift];
         var box = el('div','shift');
