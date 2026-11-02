@@ -589,6 +589,7 @@ function renderUpdate(entry) {
   var head = el("div", "entry-head");
   head.appendChild(el("span", "entry-who", entry.who || "Volunteer"));
   head.appendChild(el("span", "entry-time", new Date(entry.time).toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"})));
+  if (entry.updatedAt) head.appendChild(el('span', 'note', 'Edited'));
   if (entry.kind === "question") head.appendChild(el("span", "chip need", "Question"));
   card.appendChild(head);
   if (entry.loads) LOADS.forEach(function (load) {
@@ -645,17 +646,25 @@ function renderLoadNotes(dateIso, shiftKey, actions, allowNotes) {
   var file = el("input"); file.type = "file"; file.accept = "image/*"; file.multiple = true;
   photoLabel.appendChild(file); form.appendChild(photoLabel);
   var previews = el("div", "photo-row"); form.appendChild(previews);
-  var photos = [], processing = false, saving = false, draftId = null;
+  var photos = [], processing = false, saving = false, draftId = null, editingEntry = null;
   form.addEventListener("input", function () { if (!saving) draftId = null; });
   var status = el("div", "note"); status.setAttribute("role", "status");
   var actions = el("div", "photo-row");
   var submit = el("button", "btn-primary", "Submit Notes"); submit.type = "submit";
   var cancel = el("button", "btn-outline", "Cancel"); cancel.type = "button";
+  var removeNotes = el('button', 'btn-outline', 'Delete Notes'); removeNotes.type = 'button'; removeNotes.hidden = true;
   actions.appendChild(submit); actions.appendChild(cancel); form.appendChild(actions); form.appendChild(status);
+  actions.appendChild(removeNotes);
   box.appendChild(form);
   var list = el("div", "note-list"); box.appendChild(list);
   var saved = el("div", "note"); saved.setAttribute("role", "status"); box.appendChild(saved);
+  function ownEntry() {
+    return currentUser && loadUpdates().find(function (n) { return n.date === dateIso && n.shift === shiftKey && n.volunteerId === currentUser.id; });
+  }
   function refreshSummary() {
+    var mine = ownEntry();
+    button.textContent = mine ? 'Edit Notes' : 'Add Notes';
+    button.setAttribute('aria-label', (mine ? 'Edit Notes' : 'Add Notes') + ' for ' + dateIso + ' ' + (shiftKey === 'am' ? 'morning' : 'evening'));
     list.textContent = "";
     loadUpdates().filter(function (n) { return n.date === dateIso && n.shift === shiftKey; })
       .forEach(function (n) { list.appendChild(renderUpdate(n)); });
@@ -664,9 +673,34 @@ function renderLoadNotes(dateIso, shiftKey, actions, allowNotes) {
   button.addEventListener("click", function () {
     if (!requireSignIn()) return;
     form.hidden = !form.hidden; button.setAttribute("aria-expanded", String(!form.hidden));
-    if (!form.hidden) name.focus();
+    if (!form.hidden) {
+      editingEntry = ownEntry() || null;
+      name.value = currentUser.name;
+      if (editingEntry) {
+        LOADS.forEach(function (load) { STAGES.forEach(function (stage) { checks[load[0]][stage[0]].checked = !!(editingEntry.loads && editingEntry.loads[load[0]] && editingEntry.loads[load[0]][stage[0]]); }); });
+        text.value = editingEntry.text || ''; photos = (editingEntry.photos || []).slice(); showPhotos();
+        draftId = null;
+      }
+      submit.textContent = editingEntry ? 'Save Notes' : 'Submit Notes';
+      removeNotes.hidden = !editingEntry;
+      status.textContent = ''; text.focus();
+    }
   });
   cancel.addEventListener("click", close);
+  removeNotes.addEventListener('click', async function () {
+    if (!editingEntry || processing || saving) return;
+    saving = true;
+    var fields = form.querySelectorAll('input, textarea, button'); fields.forEach(function (field) { field.disabled = true; });
+    status.textContent = 'Deleting…';
+    try {
+      await api('updates/delete', {id:editingEntry.id,version:editingEntry.version});
+      editingEntry = null; draftId = null; text.value = ''; photos = []; showPhotos();
+      LOADS.forEach(function (load) { STAGES.forEach(function (stage) { checks[load[0]][stage[0]].checked = false; }); });
+      status.textContent = ''; close(); saved.textContent = 'Your notes were deleted.';
+      await syncShared(true);
+    } catch (error) { status.textContent = error.message; }
+    finally { saving = false; fields.forEach(function (field) { field.disabled = false; }); }
+  });
   function showPhotos() {
     previews.textContent = "";
     photos.forEach(function (url, index) {
@@ -696,7 +730,8 @@ function renderLoadNotes(dateIso, shiftKey, actions, allowNotes) {
     });
     if (!any && !text.value.trim() && !photos.length) { status.textContent = "Check a completed task, add a note, or attach a photo."; return; }
     draftId = draftId || crypto.randomUUID();
-    var entry = {id: draftId, date: dateIso, shift: shiftKey, who: name.value.trim() || "Volunteer", loads: loads, text: text.value.trim(), photos: photos.slice()};
+    var entry = {id: editingEntry ? editingEntry.id : draftId, date: dateIso, shift: shiftKey, who: name.value.trim() || "Volunteer", loads: loads, text: text.value.trim(), photos: photos.slice()};
+    if (editingEntry) { entry.version = editingEntry.version; entry.operationId = draftId; }
     saving = true; submit.disabled = true; status.textContent = "Saving…";
     var fields = form.querySelectorAll("input, textarea, button");
     fields.forEach(function (field) { field.disabled = true; });
@@ -708,7 +743,7 @@ function renderLoadNotes(dateIso, shiftKey, actions, allowNotes) {
     } finally {
       saving = false; fields.forEach(function (field) { field.disabled = false; });
     }
-    draftId = null;
+    draftId = null; editingEntry = null;
     lsSet(LS_NAME, name.value.trim());
     LOADS.forEach(function (load) { STAGES.forEach(function (stage) { checks[load[0]][stage[0]].checked = false; }); });
     text.value = ""; photos = []; showPhotos(); status.textContent = "";

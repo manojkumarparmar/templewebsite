@@ -45,7 +45,12 @@ async function fixture() {
       }
       if (!options.body) return Response.json({ updates, backups });
       const data = JSON.parse(options.body);
-      if (path === '/api/updates') updates.unshift({ ...data, time: new Date().toISOString() });
+      if (path === '/api/updates') {
+        const existing=updates.findIndex(u=>u.id===data.id);
+        const saved={...data,volunteerId:context.currentUser.id,version:(data.version || 0)+1,time:new Date().toISOString()};
+        if(existing>=0) updates[existing]=saved; else updates.unshift(saved);
+      }
+      if (path === '/api/updates/delete') updates=updates.filter(u=>u.id!==data.id);
       if (path === '/api/backups') {
         const key = data.date + ':' + data.shift;
         backups[key] = data.action === 'request' ? { person: data.name, notes: data.notes, version: data.version + 1 } : { ...backups[key], cover: data.name, version: data.version + 1 };
@@ -61,6 +66,29 @@ async function fixture() {
   return { nodes, context, setFail(value) { fail = value; }, get updates() { return updates; } };
 }
 const buttons = (node, text) => find(node, n => n.tag === 'button' && n.text === text);
+
+test('notes switch from Add to Edit for the author, prefill their entry, and allow deletion', async () => {
+  const f=await fixture(), {nodes,context}=f;
+  const shift=nodes.days.children[1].children[1];
+  buttons(shift,'Add Notes')[0].events.click();
+  const form=find(shift,n=>n.tag==='form' && n.id.startsWith('update-'))[0];
+  find(form,n=>n.tag==='textarea')[0].value='Original';
+  await form.events.submit({preventDefault(){}});
+  assert.equal(buttons(shift,'Add Notes').length,0);
+  assert.equal(buttons(shift,'Edit Notes').length,1);
+  buttons(shift,'Edit Notes')[0].events.click();
+  assert.equal(find(form,n=>n.tag==='textarea')[0].value,'Original');
+  assert.equal(buttons(form,'Delete Notes')[0].hidden,false);
+  find(form,n=>n.tag==='textarea')[0].value='Edited';
+  await form.events.submit({preventDefault(){}});
+  assert.equal(f.updates.length,1); assert.equal(f.updates[0].text,'Edited');
+  context.currentUser={id:'another',name:'Another Person',roles:['volunteer']};
+  await context.syncShared(); assert.equal(buttons(shift,'Add Notes').length,1);
+  context.currentUser={id:'tester',name:'Test User',roles:['volunteer']}; await context.syncShared();
+  buttons(shift,'Edit Notes')[0].events.click();
+  await buttons(form,'Delete Notes')[0].events.click();
+  assert.equal(f.updates.length,0); assert.equal(buttons(shift,'Add Notes').length,1);
+});
 
 test('recurring schedule shows a compact Monday–Sunday view and one role-restricted editor', async () => {
   const {nodes,context} = await fixture();

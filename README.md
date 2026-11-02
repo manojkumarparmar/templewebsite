@@ -40,6 +40,20 @@ Each date uses the recurring weekly plan, so the schedule updates on its own.
 
 ## Load updates and notes
 
+Each volunteer has one notes entry per service date and shift. After saving, their
+**Add Notes** action becomes **Edit Notes**, prefilled with their checklist, notes,
+and attached photos. Only the author can save edits or use **Delete Notes** in that
+editor; admins cannot edit someone else's entry. Other volunteers can add their own
+separate entry to the same shift. Deleting hides the entry and its photos from the
+website and allows the author to add a new entry. Deleted records are retained in
+D1; no permanent retention cleanup is enabled. Concurrent edits are checked by
+version and rejected without replacing newer notes. Adding and editing remain
+available for yesterday and today.
+
+Migration `0005_editable_notes.sql` was applied to production on November 1, 2026.
+Do not reapply it. It adds note versions, edit/deletion timestamps and a unique
+index for one non-deleted entry per volunteer/date/shift. Existing notes are kept.
+
 Yesterday and today have an **Add Notes** button beside each shift. Future shifts do not. The form tracks Kitchen, Pujari,
 and Deity loads with independent Washed, Dried, and Folded checkboxes, optional notes, and
 multiple photos. Check only the tasks completed in this update; unchecked means not reported.

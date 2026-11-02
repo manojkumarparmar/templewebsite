@@ -56,7 +56,7 @@ test('empty updates are rejected; checklist-only and photo-only updates are acce
   assert.equal((await call('updates', data)).status, 201);
   const empty = update(); empty.text = ''; Object.values(empty.loads).forEach(load => { load.washed = false; });
   assert.equal((await call('updates', empty)).status, 400);
-  empty.photos = ['data:image/jpeg;base64,/9j/2Q=='];
+  empty.photos = ['data:image/jpeg;base64,/9j/2Q==']; empty.shift = 'pm';
   assert.equal((await call('updates', empty)).status, 201);
 });
 test('failed database save cleans uploaded photos and leaves no partial update', async () => {

@@ -1,0 +1,40 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {fixture} from './test-fixture.mjs';
+const day = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+const entry = () => ({id:crypto.randomUUID(),date:day,shift:'am',text:'My notes',photos:[],loads:Object.fromEntries(['kitchen','pujari','deity'].map(load=>[load,{washed:false,dried:false,folded:false}]))});
+test('one entry per person per day and shift; only the author can edit or delete it', async () => {
+  const {call,db}=fixture(); const first=entry();
+  assert.equal((await call('updates',first)).status,201);
+  assert.equal((await call('updates',entry())).status,409);
+  const edit={...first,text:'Revised notes',version:1,operationId:crypto.randomUUID()};
+  assert.equal((await call('updates',edit)).status,200);
+  assert.equal((await call('updates',edit)).status,200); // Retry is idempotent.
+  assert.equal((await call('updates',{...edit,operationId:crypto.randomUUID()})).status,409);
+  db.prepare('UPDATE auth_sessions SET volunteer_id=?').run('swetha');
+  assert.equal((await call('updates',{...edit,version:2,operationId:crypto.randomUUID()})).status,403);
+  assert.equal((await call('updates/delete',{id:first.id,version:2})).status,403);
+  const other=entry(); assert.equal((await call('updates',other)).status,201);
+  db.prepare('UPDATE auth_sessions SET volunteer_id=?').run('nanda-kumar-das');
+  assert.equal((await call('updates/delete',{id:first.id,version:1})).status,409);
+  assert.equal((await call('updates/delete',{id:first.id,version:2})).status,200);
+  assert.equal((await call('updates/delete',{id:first.id,version:2})).status,200);
+  const data=await (await call('schedule?from='+day+'&to='+day)).json();
+  assert.equal(data.updates.length,1); assert.equal(data.updates[0].id,other.id);
+  assert.equal((await call('updates',entry())).status,201);
+});
+test('editing retains only owned photos and deletes removed photos; deleted notes stop serving their photos', async () => {
+  const {call,objects}=fixture(); const first={...entry(),photos:['data:image/jpeg;base64,/9j/2Q==']};
+  await call('updates',first);
+  let data=await (await call('schedule?from='+day+'&to='+day)).json(); const photo=data.updates[0].photos[0];
+  assert.equal((await call('updates',{...first,photos:['/api/photos/foreign.jpg'],version:1,operationId:crypto.randomUUID()})).status,400);
+  assert.equal((await call('updates',{...first,photos:[photo],version:1,operationId:crypto.randomUUID()})).status,200);
+  assert.equal(objects.size,1);
+  assert.equal((await call('updates',{...first,photos:[],version:2,operationId:crypto.randomUUID()})).status,200);
+  assert.equal(objects.size,0);
+  assert.equal((await call('photos/'+photo.slice('/api/photos/'.length))).status,404);
+  const withPhoto={...first,photos:first.photos,version:3,operationId:crypto.randomUUID()}; await call('updates',withPhoto);
+  data=await (await call('schedule?from='+day+'&to='+day)).json(); const privatePhoto=data.updates[0].photos[0];
+  await call('updates/delete',{id:first.id,version:4});
+  assert.equal((await call(privatePhoto.slice('/api/'.length))).status,404);
+});

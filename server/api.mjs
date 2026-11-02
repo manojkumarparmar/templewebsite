@@ -39,12 +39,12 @@ async function body(request) {
   catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(400, 'Invalid JSON.'); }
 }
 function rowUpdate(row, photos) {
-  return { id: row.id, date: row.service_date, shift: row.shift, who: row.volunteer_name, loads: JSON.parse(row.loads_json), text: row.notes, time: row.created_at, photos: photos.map(p => '/api/photos/' + p.object_key) };
+  return { id: row.id, date: row.service_date, shift: row.shift, who: row.volunteer_name, volunteerId: row.volunteer_id, version: row.version, updatedAt: row.updated_at, loads: JSON.parse(row.loads_json), text: row.notes, time: row.created_at, photos: photos.map(p => '/api/photos/' + p.object_key) };
 }
 async function readSchedule(url, env) {
   const from = date(url.searchParams.get('from')), to = date(url.searchParams.get('to'));
   reject(to < from || to > addDays(from, 7), 'Request at most eight days.');
-  const updates = await env.DB.prepare('SELECT * FROM load_updates WHERE service_date BETWEEN ? AND ? ORDER BY created_at DESC, id DESC').bind(from, to).all();
+  const updates = await env.DB.prepare('SELECT * FROM load_updates WHERE deleted_at IS NULL AND service_date BETWEEN ? AND ? ORDER BY created_at DESC, id DESC').bind(from, to).all();
   const photos = await env.DB.prepare('SELECT p.* FROM update_photos p JOIN load_updates u ON p.update_id = u.id WHERE u.service_date BETWEEN ? AND ? ORDER BY p.object_key').bind(from, to).all();
   const backups = await env.DB.prepare('SELECT * FROM shift_backups WHERE service_date BETWEEN ? AND ?').bind(from, to).all();
   return json({ today: today(), updates: updates.results.map(row => rowUpdate(row, photos.results.filter(p => p.update_id === row.id))), backups: Object.fromEntries(backups.results.map(row => [row.service_date + ':' + row.shift, { ...JSON.parse(row.state_json), version: row.version }])) });
@@ -67,9 +67,24 @@ async function saveUpdate(data, env, user) {
   }
   reject(!any && !notes && !data.photos.length, 'Check a task, add a note, or attach a photo.');
   // A retry after an interrupted response returns the existing update, without duplicates.
-  const existing = await env.DB.prepare('SELECT id FROM load_updates WHERE id = ?').bind(data.id).first();
-  if (existing) return json({ saved: true, id: data.id });
-  const images = data.photos.map(encoded => {
+  const existing = await env.DB.prepare('SELECT * FROM load_updates WHERE id = ?').bind(data.id).first();
+  if (existing) {
+    reject(existing.volunteer_id !== user.id, 'Only the author can edit these notes.', 403);
+    reject(existing.deleted_at, 'These notes were deleted. Reload the schedule.',409);
+    reject(existing.service_date !== day || existing.shift !== data.shift, 'The day and shift cannot be changed.');
+    if (data.version === undefined) return json({saved:true,id:data.id});
+    reject(!Number.isInteger(data.version) || typeof data.operationId !== 'string' || !/^[a-zA-Z0-9-]{16,64}$/.test(data.operationId), 'Invalid edit version.');
+    if (existing.last_operation === data.operationId) return json({saved:true,id:data.id});
+    reject(existing.version !== data.version, 'These notes changed elsewhere. Close and reopen the editor to load the latest notes.',409);
+  } else {
+    reject(data.version !== undefined, 'These notes no longer exist. Reload the schedule.',409);
+    const own = await env.DB.prepare('SELECT id FROM load_updates WHERE service_date=? AND shift=? AND volunteer_id=? AND deleted_at IS NULL').bind(day,data.shift,user.id).first();
+    reject(own, 'You already added notes for this shift. Edit your existing notes instead.',409);
+  }
+  const oldPhotos = existing ? (await env.DB.prepare('SELECT object_key FROM update_photos WHERE update_id=?').bind(data.id).all()).results.map(p=>p.object_key) : [];
+  const retained = data.photos.filter(p=>typeof p==='string' && p.startsWith('/api/photos/')).map(p=>p.slice('/api/photos/'.length));
+  reject(new Set(retained).size !== retained.length || retained.some(key=>!oldPhotos.includes(key)), 'Only photos from your existing entry can be retained.');
+  const images = data.photos.filter(p=>typeof p !== 'string' || !p.startsWith('/api/photos/')).map(encoded => {
     reject(typeof encoded !== 'string' || !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(encoded), 'Invalid photo.');
     let bytes;
     try { bytes = Uint8Array.from(atob(encoded.split(',')[1]), c => c.charCodeAt(0)); } catch { throw new HttpError(400, 'Invalid photo.'); }
@@ -79,19 +94,25 @@ async function saveUpdate(data, env, user) {
   const time = new Date().toISOString();
   // Unique object keys keep failed requests from deleting another request's photos.
   const keys = images.map((_, i) => `${data.id}/${crypto.randomUUID()}-${i}.jpg`);
+  const operation = existing ? data.operationId : crypto.randomUUID();
   try {
     for (let i = 0; i < images.length; i++) await env.PHOTOS.put(keys[i], images[i], { httpMetadata: { contentType: 'image/jpeg' } });
-    await env.DB.batch([
-      env.DB.prepare('INSERT INTO load_updates (id, service_date, shift, volunteer_name, loads_json, notes, created_at, volunteer_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(data.id, day, data.shift, who, JSON.stringify(loads), notes, time, user.id),
-      ...images.map((bytes, i) => env.DB.prepare('INSERT INTO update_photos (object_key, update_id, content_type, byte_size, created_at) VALUES (?, ?, ?, ?, ?)').bind(keys[i], data.id, 'image/jpeg', bytes.length, time))
+    const results = await env.DB.batch([
+      existing
+        ? env.DB.prepare('UPDATE load_updates SET volunteer_name=?,loads_json=?,notes=?,version=version+1,updated_at=?,last_operation=? WHERE id=? AND volunteer_id=? AND version=? AND deleted_at IS NULL').bind(who,JSON.stringify(loads),notes,time,operation,data.id,user.id,data.version)
+        : env.DB.prepare('INSERT OR IGNORE INTO load_updates (id, service_date, shift, volunteer_name, loads_json, notes, created_at, volunteer_id,last_operation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(data.id, day, data.shift, who, JSON.stringify(loads), notes, time, user.id,operation),
+      ...(existing ? [env.DB.prepare("DELETE FROM update_photos WHERE update_id=? AND object_key NOT IN (SELECT value FROM json_each(?)) AND EXISTS (SELECT 1 FROM load_updates WHERE id=? AND last_operation=?)").bind(data.id,JSON.stringify(retained),data.id,operation)] : []),
+      ...images.map((bytes, i) => env.DB.prepare('INSERT INTO update_photos (object_key, update_id, content_type, byte_size, created_at) SELECT ?, ?, ?, ?, ? WHERE EXISTS(SELECT 1 FROM load_updates WHERE id=? AND last_operation=?)').bind(keys[i], data.id, 'image/jpeg', bytes.length, time,data.id,operation))
     ]);
+    reject(results[0].meta.changes !== 1, 'These notes changed elsewhere. Reload and edit your existing entry.',409);
   } catch (error) {
+    const committed = await env.DB.prepare('SELECT last_operation FROM load_updates WHERE id=?').bind(data.id).first();
+    if (committed?.last_operation === operation) return json({saved:true,id:data.id});
     await Promise.allSettled(keys.map(key => env.PHOTOS.delete(key)));
-    const committed = await env.DB.prepare('SELECT id FROM load_updates WHERE id = ?').bind(data.id).first();
-    if (committed) return json({ saved: true, id: data.id });
     throw error;
   }
-  return json({ saved: true, id: data.id }, 201);
+  await Promise.allSettled(oldPhotos.filter(key=>!retained.includes(key)).map(key=>env.PHOTOS.delete(key)));
+  return json({ saved: true, id: data.id }, existing ? 200 : 201);
 }
 async function saveBackup(data, env, user) {
   const day = date(data.date), nowDay = today();
@@ -125,7 +146,7 @@ export async function handleApi(request, env) {
     if (request.method === 'GET' && url.pathname === '/api/schedule') return await readSchedule(url, env);
     if (request.method === 'GET' && url.pathname.startsWith('/api/photos/')) {
       const key = url.pathname.slice('/api/photos/'.length);
-      const row = await env.DB.prepare('SELECT object_key FROM update_photos WHERE object_key = ?').bind(key).first();
+      const row = await env.DB.prepare('SELECT p.object_key FROM update_photos p JOIN load_updates u ON u.id=p.update_id WHERE p.object_key=? AND u.deleted_at IS NULL').bind(key).first();
       reject(!row, 'Photo not found.', 404);
       const photo = await env.PHOTOS.get(key); reject(!photo, 'Photo not found.', 404);
       return new Response(photo.body, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' } });
@@ -136,6 +157,16 @@ export async function handleApi(request, env) {
     const peopleResult = await handlePeople(request, env, url, data, user);
     if (peopleResult) return peopleResult;
     reject(!user, 'Please sign in with an approved volunteer account.', 401);
+    if (url.pathname === '/api/updates/delete') {
+      const entry = await env.DB.prepare('SELECT * FROM load_updates WHERE id=?').bind(text(data.id,64,true)).first();
+      reject(!entry, 'Notes not found.',404);
+      reject(entry.volunteer_id !== user.id, 'Only the author can delete these notes.',403);
+      if (entry.deleted_at) return json({deleted:true});
+      reject(!Number.isInteger(data.version) || entry.version !== data.version, 'These notes changed. Reload before deleting.',409);
+      const result = await env.DB.prepare('UPDATE load_updates SET deleted_at=?,version=version+1 WHERE id=? AND volunteer_id=? AND version=? AND deleted_at IS NULL').bind(new Date().toISOString(),entry.id,user.id,data.version).run();
+      reject(result.meta.changes !== 1,'These notes changed. Reload before deleting.',409);
+      return json({deleted:true});
+    }
     if (url.pathname === '/api/updates') return await saveUpdate(data, env, user);
     if (url.pathname === '/api/backups') return await saveBackup(data, env, user);
     throw new HttpError(404, 'Not found.');
