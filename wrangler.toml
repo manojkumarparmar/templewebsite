@@ -4,6 +4,8 @@ pages_build_output_dir = "./dist"
 
 [vars]
 GOOGLE_CLIENT_ID = "197416540652-d15ukn5jn4eot1gh01r70lv0h3d6efh7.apps.googleusercontent.com"
+# Public Firebase web configuration, not a service-account credential.
+FIREBASE_WEB_CONFIG = '{"apiKey":"AIzaSyCh_1fln8x8hRB4La3P8I4VbreeNfwLnCk","authDomain":"temple-services-513414.firebaseapp.com","projectId":"temple-services-513414","appId":"1:197416540652:web:b4ca3b782934a84d10c8c9"}'
 
 [[d1_databases]]
 binding = "DB"
