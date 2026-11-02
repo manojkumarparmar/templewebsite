@@ -19,3 +19,5 @@ Read `PROJECT_MEMORY.md` for the complete November 1, 2026 session record, deplo
 - Hide all shift actions when signed out. Notes actions are for yesterday/today only. Backup requests are for today/future only and require current shift assignment (including the confirmed replacement), coordinator, admin, or super-admin; enforce this on the server. Pending backup offers remain available to signed-in active volunteers.
 - Per the user, only Nanda Kumar Das and Ajinkya are male among the original volunteers. Women's names end in `Mtj`; Ajinkya's display name is `Ajinkya Pr`; Nanda Kumar Das remains unchanged. `Vaidehi Mtj` was added and later made an admin through the website. Preserve subsequent live user edits.
 
+
+- Historical assignments are versioned in schedule_versions via migration 0006 (already applied in production). Recurring/profile changes affect today/future only; resolve past assignments from dated versions, never current volunteer records. History requires sign-in and is read only. See PROJECT_MEMORY.md for pre-version unknown dates and retention behavior.
