@@ -826,12 +826,12 @@ async function loadHistory() {
   var from = addDays(chosen, -((chosen.getDay()+6)%7)), to = addDays(from,6);
   if (to > yesterday) to = yesterday;
   var request = ++historyRequest, list = document.getElementById('history-days');
-  list.textContent = ''; status.textContent = 'Loading past shifts…';
+  list.textContent = ''; status.textContent = 'Loading past shiftsâ€¦';
   document.getElementById('history-next').disabled = iso(addDays(from,7)) > iso(yesterday);
   try {
     var data = await api('schedule?from='+iso(from)+'&to='+iso(to));
     if (request !== historyRequest || !currentUser) return;
-    status.textContent = fmt(from,{month:'short',day:'numeric',year:'numeric'})+' – '+fmt(to,{month:'short',day:'numeric',year:'numeric'})+' · Read only';
+    status.textContent = fmt(from,{month:'short',day:'numeric',year:'numeric'})+' â€“ '+fmt(to,{month:'short',day:'numeric',year:'numeric'})+' Â· Read only';
     for (var d = from; d <= to; d = addDays(d,1)) {
       var day = iso(d), card = el('li','day');
       card.appendChild(el('h3',null,fmt(d,{weekday:'long',month:'short',day:'numeric'})));
