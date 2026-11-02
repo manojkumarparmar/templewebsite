@@ -41,6 +41,7 @@ function updateAccount() {
   document.getElementById('sign-out').hidden = !currentUser;
   document.getElementById('add-volunteer').hidden = !managesVolunteers();
   if (!managesVolunteers()) closeNewVolunteer();
+  renderRecurring();
 }
 function closeNewVolunteer() {
   var box = document.getElementById('new-volunteer'); box.textContent = ''; box.hidden = true;
@@ -68,6 +69,7 @@ function applyVolunteerSchedule() {
 async function refreshVolunteers() {
   var data = await api('volunteers'); volunteerDirectory = data.volunteers;
   applyVolunteerSchedule(); renderVolunteers();
+  if (!recurringDraft) renderRecurring();
 }
 function renderVolunteers() {
   var list = document.getElementById('volunteer-list'); list.textContent = '';
@@ -181,6 +183,7 @@ function volunteerForm(volunteer, close) {
   return form;
 }
 async function initPeople() {
+  initRecurring();
   initPhoneSignIn();
   ['volunteer-search', 'volunteer-role', 'volunteer-day', 'volunteer-sort'].forEach(function (id) {
     document.getElementById(id).addEventListener(id === 'volunteer-search' ? 'input' : 'change', renderVolunteers);

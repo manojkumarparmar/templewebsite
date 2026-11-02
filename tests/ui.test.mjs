@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const peopleScript = await readFile(new URL('../volunteers.js', import.meta.url), 'utf8');
 const phoneScript = await readFile(new URL('../phone-auth.js', import.meta.url), 'utf8');
+const recurringScript = await readFile(new URL('../recurring.js', import.meta.url), 'utf8');
 function find(node, predicate) { return [...(predicate(node) ? [node] : []), ...(node.children || []).flatMap(child => find(child, predicate))]; }
 class Element {
   constructor(tag) { this.tag = tag; this.children = []; this.attrs = {}; this.events = {}; this.value = ''; this.style = {}; this.checked = false; this.hidden = false; }
@@ -54,11 +55,52 @@ async function fixture() {
     }
   });
   vm.runInContext(phoneScript, context);
+  vm.runInContext(recurringScript, context);
   vm.runInContext(peopleScript, context);
   await vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
   return { nodes, context, setFail(value) { fail = value; }, get updates() { return updates; } };
 }
 const buttons = (node, text) => find(node, n => n.tag === 'button' && n.text === text);
+
+test('recurring schedule shows a compact Monday–Sunday view and one role-restricted editor', async () => {
+  const {nodes,context} = await fixture();
+  assert.equal(nodes['recurring-body'].children.length,7);
+  assert.equal(nodes['recurring-body'].children[0].children[0].text,'Monday');
+  assert.equal(nodes['recurring-body'].children[6].children[0].text,'Sunday');
+  assert.equal(find(nodes['recurring-body'], n => n.tag === 'button').length,0);
+  assert.equal(nodes['edit-recurring'].hidden,true);
+  context.currentUser={id:'coordinator',roles:['coordinator']}; context.updateAccount();
+  assert.equal(nodes['edit-recurring'].hidden,false);
+  await nodes['edit-recurring'].events.click();
+  assert.equal(nodes['recurring-actions'].hidden,false);
+  assert.equal(nodes['edit-recurring'].hidden,true);
+  assert.equal(find(nodes['recurring-body'], n => n.tag === 'details').length,14);
+  const input=find(nodes['recurring-body'],n=>n.type==='checkbox')[0];
+  const original=context.recurringDraft[0].assignments.length;
+  input.checked=!input.checked; input.events.change();
+  assert.notEqual(context.recurringDraft[0].assignments.length,original);
+  nodes['cancel-recurring'].events.click();
+  assert.equal(nodes['recurring-actions'].hidden,true);
+  assert.equal(find(nodes['recurring-body'],n=>n.tag==='input').length,0);
+  context.currentUser=null; context.updateAccount();
+  assert.equal(nodes['edit-recurring'].hidden,true);
+});
+
+test('recurring editor preserves a failed save and returns to the view after a successful save', async () => {
+  const f=await fixture(), {nodes,context}=f;
+  context.currentUser={id:'coordinator',roles:['coordinator']}; context.updateAccount();
+  await nodes['edit-recurring'].events.click();
+  const input=find(nodes['recurring-body'],n=>n.type==='checkbox')[0]; input.checked=!input.checked; input.events.change();
+  const draft=JSON.stringify(context.recurringDraft);
+  f.setFail(true); await nodes['recurring-form'].events.submit({preventDefault(){}});
+  assert.equal(JSON.stringify(context.recurringDraft),draft);
+  assert.equal(nodes['save-recurring'].disabled,false);
+  assert.equal(nodes['recurring-actions'].hidden,false);
+  f.setFail(false); await nodes['recurring-form'].events.submit({preventDefault(){}});
+  assert.equal(context.recurringDraft,null);
+  assert.equal(nodes['recurring-actions'].hidden,true);
+  assert.equal(nodes['recurring-status'].text,'Recurring schedule saved.');
+});
 
 test('volunteer management exposes add and edit forms only to administrators', async () => {
   const {nodes, context} = await fixture();

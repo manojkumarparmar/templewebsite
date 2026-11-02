@@ -126,6 +126,35 @@ async function saveVolunteer(data, user, env) {
   }
   return reply({ saved: true, id });
 }
+async function saveRecurringSchedule(data, user, env) {
+  fail(!user || !(isAdmin(user) || user.roles.includes('coordinator')), 403, 'Only administrators and coordinators can edit the recurring schedule.');
+  const rows = (await env.DB.prepare('SELECT id,version FROM volunteers WHERE active=1').all()).results;
+  fail(!Array.isArray(data.volunteers) || data.volunteers.length !== rows.length, 409, 'The volunteer list changed. Reload the schedule and try again.');
+  const seen = new Set();
+  for (const entry of data.volunteers) {
+    fail(!entry || typeof entry.id !== 'string' || seen.has(entry.id) || !rows.some(r => r.id === entry.id && r.version === entry.version), 409, 'The schedule or volunteer list changed. Reload and try again.');
+    seen.add(entry.id);
+    fail(!Array.isArray(entry.assignments) || entry.assignments.length > 14, 400, 'Invalid recurring assignments.');
+    const shifts = new Set();
+    for (const a of entry.assignments) {
+      fail(!a || !Number.isInteger(a.weekday) || a.weekday < 0 || a.weekday > 6 || !['am','pm'].includes(a.shift), 400, 'Invalid recurring assignment.');
+      fail(shifts.has(a.weekday + ':' + a.shift), 400, 'Do not repeat an assignment.');
+      shifts.add(a.weekday + ':' + a.shift);
+    }
+  }
+  // One guarded statement keeps all fourteen shifts atomic, including concurrent edits.
+  const payload = JSON.stringify(data.volunteers.map(v => ({id:v.id,version:v.version,assignments:v.assignments.map(a => ({weekday:a.weekday,shift:a.shift}))})));
+  const result = await env.DB.prepare(`WITH proposed AS MATERIALIZED (SELECT value FROM json_each(?)),
+    valid AS MATERIALIZED (SELECT
+      (SELECT count(*) FROM volunteers WHERE active=1) = (SELECT count(*) FROM proposed)
+      AND NOT EXISTS (SELECT 1 FROM volunteers v WHERE v.active=1 AND NOT EXISTS
+        (SELECT 1 FROM proposed p WHERE json_extract(p.value,'$.id')=v.id AND json_extract(p.value,'$.version')=v.version)) AS ok)
+    UPDATE volunteers SET assignments_json=(SELECT json_extract(value,'$.assignments') FROM proposed WHERE json_extract(value,'$.id')=volunteers.id),
+      version=version+1, updated_at=? WHERE active=1 AND (SELECT ok FROM valid)`)
+    .bind(payload, new Date().toISOString()).run();
+  fail(result.meta.changes !== rows.length, 409, 'The schedule changed elsewhere. Reload and try again.');
+  return reply({saved:true});
+}
 export async function handlePeople(request, env, url, data, user) {
   const path = url.pathname;
   if (request.method === 'GET' && path === '/api/auth/me') return reply({ user });
@@ -138,6 +167,7 @@ export async function handlePeople(request, env, url, data, user) {
     return reply({ volunteers: rows.results.filter(r => r.active || isAdmin(user)).map(row => profile(row, isAdmin(user))), roles: ROLES });
   }
   if (request.method !== 'POST') return null;
+  if (path === '/api/recurring/save') return saveRecurringSchedule(data, user, env);
   if (path.startsWith('/api/auth/')) fail(JSON.stringify(data).length > 16000, 413, 'Sign-in request too large.');
   if (path === '/api/auth/email/start') return sendCode(data, request, env);
   if (path === '/api/auth/email/verify') return checkCode(data, request, env);

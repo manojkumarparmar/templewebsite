@@ -14,6 +14,15 @@ shared API. Server files, tests, and database migrations are excluded from stati
 
 ## Updating the schedule
 
+The Schedule tab includes a compact recurring Monday–Sunday table below Permanent
+backups. Admins, super-admins and coordinators have one **Edit recurring schedule**
+button for the full week. Each shift offers existing active volunteers, including
+multiple selections or no assignment. **Save recurring schedule** saves the entire
+week to D1 and returns to the read-only table, updating the rolling schedule and
+volunteer directory. **Cancel** discards edits. Concurrent changes are rejected
+without partially saving the week. Coordinators gain assignment editing only;
+private contact information and volunteer role management remain admin-only.
+
 Open `index.html` and edit the block marked `EDIT THIS SECTION TO UPDATE THE SCHEDULE`:
 
 - `BACKUPS`: names of the permanent backups (currently placeholders).
