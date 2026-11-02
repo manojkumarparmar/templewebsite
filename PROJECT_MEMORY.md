@@ -109,3 +109,37 @@ All migrations below were already applied to production. Use new forward migrati
 - History is read only. Yesterday remains editable through the normal schedule; older note save/delete requests are rejected. No historical corrections endpoint was added. Retention/automatic deletion remains disabled.
 - Migration 0006_schedule_history.sql was applied directly to production D1 on November 1, 2026. Do not reapply it or prior seed migrations. It seeds only the first plan version from the live roster; it never reseeds volunteers.
 - Verification: 40 tests pass, including week navigation/sign-out clearing, recurring changes and deactivation preserving previous dates, unknown assignments, access restrictions, and Chicago DST boundaries. Static build and Cloudflare function compilation passed. Signed-in History was also visually checked in an isolated local preview with fixture data; production public schedule and anonymous-history rejection were verified without writing test service data.
+
+
+## Chat summary: Review latest website changes (November 1, 2026)
+
+This section distinguishes work performed in this chat from earlier volunteer, notes, authentication and recurring-editor changes, which were reviewed here but implemented in previous chats.
+
+### Implemented and deployed in this chat
+
+- Added View past shifts for signed-in active volunteers within Schedule. History has a date picker, previous/next week navigation and a read-only display of dated assignments, notes, laundry checklists, photos and backup records/history. Signing out clears the history display. The normal rolling schedule remains yesterday, today and six upcoming days.
+- Enforced the user's explicit rule: recurring schedule changes affect today and future dates only; yesterday and older assignments must not change. Volunteer renames, reassignment, deactivation and removal also preserve historical names/assignments. Complete recurring-plan versions are recorded transactionally by D1 triggers, so preservation does not depend on daily visitors or a scheduled job.
+- Added forward migration 0006_schedule_history.sql and applied it to production D1. It creates schedule_versions, its index, an initial version from the current live roster and insert/update/delete triggers. Do not reapply it. No existing volunteers, notes, photos or backup records were reseeded or removed by this migration.
+- Dates before tracking began explicitly show Original assignment not recorded where the original assignment cannot be established. Do not infer historical assignments from the current recurring roster. Existing dated notes and backup records still display.
+- History reads earlier than yesterday require an active signed-in volunteer on the server; historical photo reads have the same restriction and private/no-store caching. Notes older than yesterday cannot be saved or deleted through the API. Yesterday's author-only note editing/deletion remains available in the normal Schedule view. No historical correction workflow was implemented.
+- Retention remains unchanged: no automated permanent deletion of notes, photos or backup data. Existing note soft-deletion behavior is retained.
+- Fixed history text encoding and wide-screen day-heading/shift alignment; aligned week controls.
+
+### Publication and validation
+
+- Implementation commits: bd05381 (history/preservation), 07c5ed0 (project record), f8d5811 (text rendering/preview record), 1f9cf09 (final history layout). All pushed to main through existing Cloudflare Pages hosting.
+- Final website implementation commit at this summary: 1f9cf09. Production deployment e05d2827-7965-45a8-bfaf-74582b04c65d. Final layout was verified served at https://templeservices.pages.dev/ using a cache-busting read.
+- All 40 tests passed. The final layout-only adjustment also passed all 11 UI tests. Static build and Cloudflare functions compilation passed.
+- Visually checked signed-in History using isolated local fixture data, including a sample past laundry note; this was not a production sign-in. Verified production dated-assignment response and HTTP 401 for anonymous older-history requests. No production test notes or volunteer edits were created for verification.
+- Preview image: ../outputs/history-preview.png relative to this checkout. Local preview server was stopped after verification.
+
+### WhatsApp discussion: proposed, not implemented
+
+- User asked about posting a group message when a critical website action occurs, specifically a successful Need backup request. Potential follow-up event: backup confirmation.
+- Proposed free flow: save the request first, then offer Share on WhatsApp with date, morning/evening shift, unavailable volunteer and website link; user selects the group and sends. A sharing link prepares text and does not automatically send it.
+- User has not selected the sharing flow versus fully automatic posting. No sharing buttons, notification jobs, WhatsApp account connections or group messages were created in this chat.
+- Fully automatic posting to the existing group requires further research into currently supported official integration/eligibility. Meta's group API documentation returned a rate-limit error during research; do not treat eligibility or existing-group support as verified. Do not claim that the standard sharing link can silently target or post to a group.
+
+### Chat project context
+
+- App initially listed this chat without a project even though the user's screenshot showed it under Temple Services. The move_thread_to_project tool successfully explicitly associated this chat with the local Temple Services project, ID 5fd25556-ec9a-4d7e-827b-a26060d563ed. Do not ask the user to recreate this chat based solely on that earlier null result.
